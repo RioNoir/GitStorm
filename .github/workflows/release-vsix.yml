@@ -1,0 +1,86 @@
+name: Release VSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to release, for example v0.1.0'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build VSIX and publish GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release_tag.outputs.tag }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck host
+        run: npm run typecheck
+
+      - name: Typecheck webviews
+        run: npm run typecheck:webview
+
+      - name: Read package version
+        id: package
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Package VSIX
+        run: |
+          mkdir -p dist
+          npm run package -- --out "dist/gitstorm-${{ steps.package.outputs.version }}.vsix"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitstorm-vsix
+          path: dist/*.vsix
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" > /dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" dist/*.vsix --clobber
+          else
+            gh release create "${RELEASE_TAG}" dist/*.vsix \
+              --title "GitStorm ${RELEASE_TAG}" \
+              --generate-notes
+          fi
