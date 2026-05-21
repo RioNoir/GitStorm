@@ -1,0 +1,289 @@
+{
+  "name": "gitstorm",
+  "displayName": "GitStorm",
+  "description": "IntelliJ/PhpStorm-style Git management for VS Code — Commit panel, Git Log with graph, and 3-way merge editor",
+  "version": "0.1.0",
+  "publisher": "rionoir",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "scm",
+    "commit",
+    "log",
+    "merge",
+    "intellij",
+    "phpstorm"
+  ],
+  "icon": "media/icons/gitstorm.png",
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "workspaceContains:**/.git"
+  ],
+  "main": "./out/host/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitstorm-commit",
+          "title": "GitStorm Commit",
+          "icon": "media/icons/git-commit.svg"
+        }
+      ],
+      "panel": [
+        {
+          "id": "gitstorm-log",
+          "title": "GitStorm Log",
+          "icon": "media/icons/git-branch.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitstorm-commit": [
+        {
+          "type": "webview",
+          "id": "gitstorm.commitPanel",
+          "name": "GitStorm Commit",
+          "retainContextWhenHidden": true
+        },
+        {
+          "id": "gitstorm.commitBadge",
+          "name": "",
+          "when": "false"
+        }
+      ],
+      "gitstorm-log": [
+        {
+          "type": "webview",
+          "id": "gitstorm.gitLog",
+          "name": "Git Log",
+          "retainContextWhenHidden": true
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "gitstorm.openLog",
+        "title": "GitStorm: Focus Git Log",
+        "icon": "$(history)"
+      },
+      {
+        "command": "gitstorm.commit",
+        "title": "GitStorm: Commit"
+      },
+      {
+        "command": "gitstorm.commitAndPush",
+        "title": "GitStorm: Commit & Push"
+      },
+      {
+        "command": "gitstorm.pull",
+        "title": "GitStorm: Pull"
+      },
+      {
+        "command": "gitstorm.push",
+        "title": "GitStorm: Push"
+      },
+      {
+        "command": "gitstorm.fetchAll",
+        "title": "GitStorm: Fetch All Remotes"
+      },
+      {
+        "command": "gitstorm.openMergeEditor",
+        "title": "GitStorm: Open Merge Editor"
+      },
+      {
+        "command": "gitstorm.refreshCommitPanel",
+        "title": "GitStorm: Refresh Commit Panel",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gitstorm.showBranchMenu",
+        "title": "GitStorm: Branch Menu",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "gitstorm.updateProject",
+        "title": "GitStorm: Update Project",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "gitstorm.openSettings",
+        "title": "GitStorm: Settings",
+        "icon": "$(settings-gear)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "gitstorm.updateProject",
+          "when": "view == gitstorm.commitPanel",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gitstorm.refreshCommitPanel",
+          "when": "view == gitstorm.commitPanel",
+          "group": "navigation@2"
+        },
+        {
+          "command": "gitstorm.showBranchMenu",
+          "when": "view == gitstorm.commitPanel",
+          "group": "navigation@3"
+        },
+        {
+          "command": "gitstorm.openLog",
+          "when": "view == gitstorm.commitPanel",
+          "group": "navigation@4"
+        },
+        {
+          "command": "gitstorm.openSettings",
+          "when": "view == gitstorm.commitPanel",
+          "group": "navigation@5"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "gitstorm.openLog"
+        },
+        {
+          "command": "gitstorm.fetchAll"
+        },
+        {
+          "command": "gitstorm.openMergeEditor"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "gitstorm.openMergeEditor",
+          "when": "resourceScheme == file",
+          "group": "gitstorm"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "gitstorm.openLog",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
+      {
+        "command": "gitstorm.commit",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k"
+      }
+    ],
+    "colors": [
+      {
+        "id": "gitstorm.statusBarPullForeground",
+        "description": "Status bar text color when incoming commits are available (pull needed)",
+        "defaults": {
+          "dark": "#64b5f6",
+          "light": "#1565c0",
+          "highContrast": "#64b5f6",
+          "highContrastLight": "#1565c0"
+        }
+      },
+      {
+        "id": "gitstorm.statusBarPushForeground",
+        "description": "Status bar text color when there are unpushed commits or the branch is not on remote",
+        "defaults": {
+          "dark": "#ce93d8",
+          "light": "#6a1b9a",
+          "highContrast": "#ce93d8",
+          "highContrastLight": "#6a1b9a"
+        }
+      },
+      {
+        "id": "gitstorm.statusBarDirtyForeground",
+        "description": "Status bar text color when there are uncommitted changes",
+        "defaults": {
+          "dark": "#81c784",
+          "light": "#2e7d32",
+          "highContrast": "#81c784",
+          "highContrastLight": "#2e7d32"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "GitStorm",
+      "properties": {
+        "gitstorm.graphMaxCommits": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 100,
+          "maximum": 10000,
+          "description": "Maximum commits to load in the Git Log graph"
+        },
+        "gitstorm.fetchOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically fetch all remotes when the extension activates"
+        },
+        "gitstorm.projectColors": {
+          "type": "object",
+          "default": {},
+          "description": "Map of workspace folder name to hex color for the commit graph (e.g. {\"my-repo\": \"#ff6b6b\"})"
+        },
+        "gitstorm.autoRefreshInterval": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Auto-refresh interval in seconds (0 = disabled, use file watchers only)"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:host && npm run build:webview",
+    "build:host": "node esbuild.mjs --prod",
+    "build:webview": "node build-webview.mjs",
+    "watch": "concurrently \"npm run watch:host\" \"npm run watch:webview\"",
+    "watch:host": "node esbuild.mjs --watch",
+    "watch:webview": "node build-webview.mjs --watch",
+    "package": "vsce package",
+    "publish": "vsce publish",
+    "lint": "eslint src --ext .ts,.tsx",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:webview": "tsc --noEmit -p tsconfig.webview.json"
+  },
+  "dependencies": {
+    "simple-git": "^3.22.0"
+  },
+  "devDependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@tanstack/react-virtual": "^3.2.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "@vscode/codicons": "^0.0.45",
+    "@vscode/vsce": "^2.24.0",
+    "concurrently": "^8.2.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.56.0",
+    "material-icon-theme": "^5.34.0",
+    "monaco-editor": "^0.47.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.1.0",
+    "zustand": "^4.5.0"
+  },
+  "optionalDependencies": {
+    "@esbuild/darwin-arm64": "^0.20.0",
+    "@esbuild/linux-arm64": "^0.20.0",
+    "@rollup/rollup-darwin-arm64": "^4.60.4"
+  }
+}

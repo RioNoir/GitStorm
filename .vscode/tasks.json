@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "npm run build",
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "problemMatcher": []
+    },
+    {
+      "label": "watch",
+      "type": "shell",
+      "command": "npm run watch",
+      "isBackground": true,
+      "group": "build",
+      "presentation": { "reveal": "silent", "panel": "shared" },
+      "problemMatcher": [
+        {
+          "owner": "typescript",
+          "fileLocation": ["relative", "${workspaceFolder}"],
+          "pattern": {
+            "regexp": "^(.+)\\((\\d+),(\\d+)\\):\\s+(error|warning)\\s+TS(\\d+):\\s+(.+)$",
+            "file": 1, "line": 2, "column": 3, "severity": 4, "code": 5, "message": 6
+          },
+          "background": {
+            "activeOnStart": true,
+            "beginsPattern": "^\\[esbuild\\]",
+            "endsPattern": "Watching"
+          }
+        }
+      ]
+    }
+  ]
+}
