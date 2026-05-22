@@ -19,6 +19,8 @@ GitStorm brings a JetBrains-like Git workflow to Visual Studio Code: a focused C
 
 It activates automatically when the opened workspace contains a Git repository.
 
+<img src="media/screenshots/full.png" alt="GitStorm">
+
 ## Features
 
 - **Commit panel** with staged/unstaged files, tree and flat views, per-file diffs, rollback, delete, open file, add to `.gitignore`, and selected-file commits.
