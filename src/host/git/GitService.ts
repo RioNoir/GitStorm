@@ -73,8 +73,10 @@ export class GitService {
     const unstagedFiles: FileStatus[] = [];
     let conflictCount = 0;
 
+    const rootPrefix = this.rootPath + path.sep;
     for (const file of status.files) {
       const absPath = path.join(this.rootPath, file.path);
+      if (!absPath.startsWith(rootPrefix)) continue;
       const index = file.index.trim();
       const workingDir = file.working_dir.trim();
 
@@ -114,7 +116,9 @@ export class GitService {
       const unstagedFiles: FileStatus[] = [];
       let conflictCount = 0;
 
-      const makeFile = (change: import('./git.d').Change, staged: boolean): FileStatus => {
+      const rootPrefix = this.rootPath + path.sep;
+      const makeFile = (change: import('./git.d').Change, staged: boolean): FileStatus | null => {
+        if (!change.uri.fsPath.startsWith(rootPrefix)) return null;
         const relPath = path.relative(this.rootPath, change.uri.fsPath).split(path.sep).join('/');
         const status = vsStatusToGitFileStatus(change.status);
         return {
@@ -129,18 +133,22 @@ export class GitService {
 
       for (const c of vsRepo.state.indexChanges) {
         const f = makeFile(c, true);
+        if (!f) continue;
         if (f.status === 'conflicted') conflictCount++;
         else stagedFiles.push(f);
       }
       for (const c of vsRepo.state.workingTreeChanges) {
         const f = makeFile(c, false);
+        if (!f) continue;
         if (f.status === 'conflicted') conflictCount++;
         else unstagedFiles.push(f);
       }
       for (const c of vsRepo.state.untrackedChanges) {
-        unstagedFiles.push(makeFile(c, false));
+        const f = makeFile(c, false);
+        if (f) unstagedFiles.push(f);
       }
       for (const c of vsRepo.state.mergeChanges) {
+        if (!c.uri.fsPath.startsWith(rootPrefix)) continue;
         conflictCount++;
         const relPath = path.relative(this.rootPath, c.uri.fsPath).split(path.sep).join('/');
         unstagedFiles.push({
@@ -173,8 +181,10 @@ export class GitService {
     const unstagedFiles: FileStatus[] = [];
     let conflictCount = 0;
 
+    const rootPrefix = this.rootPath + path.sep;
     for (const file of status.files) {
       const absPath = path.join(this.rootPath, file.path);
+      if (!absPath.startsWith(rootPrefix)) continue;
       const index = file.index.trim();
       const workingDir = file.working_dir.trim();
 
@@ -468,7 +478,9 @@ export class GitService {
   async stageFiles(paths: string[]): Promise<void> {
     const vsRepo = this.vsRepo();
     if (vsRepo) { await vsRepo.add(paths.map(p => path.resolve(this.rootPath, p))); return; }
-    await this.git.add(paths);
+    const rootPrefix = this.rootPath + path.sep;
+    const safePaths = paths.filter(p => path.join(this.rootPath, p).startsWith(rootPrefix));
+    if (safePaths.length > 0) await this.git.add(safePaths);
   }
 
   async stageAll(): Promise<void> {
