@@ -211,24 +211,17 @@ export class WorkspaceGitManager implements vscode.Disposable {
 
   async pullAll(rebase = false): Promise<Array<{ repoId: string; ok: boolean; message: string }>> {
     const repos = Array.from(this.repos.values());
-    const results = await Promise.allSettled(
-      repos.map(async (r) => ({
-        repoId: r.repoId,
-        ok: true,
-        message: rebase ? await r.pullRebase() : await r.pull(),
-      }))
-    );
-    return results.map((r, i) =>
-      r.status === 'fulfilled' ? r.value : {
-        repoId: repos[i].repoId,
-        ok: false,
-        message: (() => {
-          const err = r.reason;
-          console.error(`[GitStorm] pullAll failed for ${repos[i].repoId}:`, err);
-          return err?.message ?? 'Unknown error';
-        })(),
+    const results: Array<{ repoId: string; ok: boolean; message: string }> = [];
+    for (const r of repos) {
+      try {
+        const message = rebase ? await r.pullRebase() : await r.pull();
+        results.push({ repoId: r.repoId, ok: true, message });
+      } catch (e: any) {
+        const detail = e?.stderr?.trim() || e?.gitErrorCode || e?.message || 'Unknown error';
+        results.push({ repoId: r.repoId, ok: false, message: detail });
       }
-    );
+    }
+    return results;
   }
 
   dispose(): void {
