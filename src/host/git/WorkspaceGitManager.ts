@@ -222,7 +222,11 @@ export class WorkspaceGitManager implements vscode.Disposable {
       r.status === 'fulfilled' ? r.value : {
         repoId: repos[i].repoId,
         ok: false,
-        message: r.reason?.message ?? 'Unknown error',
+        message: (() => {
+          const err = r.reason;
+          console.error(`[GitStorm] pullAll failed for ${repos[i].repoId}:`, err);
+          return err?.message ?? 'Unknown error';
+        })(),
       }
     );
   }

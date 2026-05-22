@@ -544,8 +544,13 @@ export class GitService {
     const vsRepo = this.vsRepo();
     if (vsRepo) {
       if (!vsRepo.state.HEAD?.upstream) return 'No remote tracking branch — skipped';
-      await vsRepo.pull();
-      return 'pulled';
+      try {
+        await vsRepo.pull();
+        return 'pulled';
+      } catch (e: any) {
+        const detail = e?.stderr?.trim() || e?.gitErrorCode || e?.message || 'Unknown error';
+        throw new Error(detail);
+      }
     }
     const tracking = await this.git.raw(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).catch(() => '');
     if (!tracking.trim()) return 'No remote tracking branch — skipped';
@@ -558,9 +563,14 @@ export class GitService {
     if (vsRepo) {
       if (!vsRepo.state.HEAD?.upstream) return 'No remote tracking branch — skipped';
       const upstream = vsRepo.state.HEAD.upstream;
-      await vsRepo.fetch();
-      await vsRepo.rebase(`${upstream.remote}/${upstream.name}`);
-      return 'pulled (rebase)';
+      try {
+        await vsRepo.fetch();
+        await vsRepo.rebase(`${upstream.remote}/${upstream.name}`);
+        return 'pulled (rebase)';
+      } catch (e: any) {
+        const detail = e?.stderr?.trim() || e?.gitErrorCode || e?.message || 'Unknown error';
+        throw new Error(detail);
+      }
     }
     const tracking = (await this.git.raw(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).catch(() => '')).trim();
     if (!tracking) return 'No remote tracking branch — skipped';
