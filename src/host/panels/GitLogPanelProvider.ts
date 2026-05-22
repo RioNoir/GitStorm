@@ -9,6 +9,7 @@ export class GitLogPanelProvider implements vscode.WebviewViewProvider, vscode.D
 
   private view?: vscode.WebviewView;
   private disposables: vscode.Disposable[] = [];
+  private refreshDebounce: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -45,6 +46,10 @@ export class GitLogPanelProvider implements vscode.WebviewViewProvider, vscode.D
         const repos = this.manager.getRepoMetas();
         const branches = await this.manager.getAllBranches();
         this.post({ type: 'LOG_INIT_DATA', repos, branches });
+      }),
+      this.manager.onStatusChange(() => {
+        if (this.refreshDebounce) clearTimeout(this.refreshDebounce);
+        this.refreshDebounce = setTimeout(() => this.post({ type: 'LOG_REFRESH' }), 500);
       }),
       vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('workbench.iconTheme') || e.affectsConfiguration('workbench.colorTheme')) {

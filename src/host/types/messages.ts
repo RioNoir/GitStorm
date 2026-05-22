@@ -109,7 +109,8 @@ export type HostToLogMsg =
   | { type: 'LOG_COMMIT_FILES'; requestId: string; files: Array<{ path: string; status: string; added?: number; removed?: number }>; error?: string }
   | { type: 'LOG_BRANCH_OP_RESULT'; requestId: string; ok: boolean; output?: string; error?: string }
   | { type: 'LOG_REFS_UPDATE'; repoId: string; branches: BranchInfo[] }
-  | { type: 'LOG_REMOTES_RESULT'; requestId: string; remotes: string[]; error?: string };
+  | { type: 'LOG_REMOTES_RESULT'; requestId: string; remotes: string[]; error?: string }
+  | { type: 'LOG_REFRESH' };
 
 // ─── Git Log: WebView → Host ─────────────────────────────────────────────────
 

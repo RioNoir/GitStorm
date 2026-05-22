@@ -25,6 +25,7 @@ function App() {
   const { panelRef: sidebarRef, onMouseDown: onSidebarResize } = useResize('right', 220, 120, 400);
   const { panelRef: detailRef, onMouseDown: onDetailResize } = useResize('left', 380, 200, 600);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadRef = useRef<() => void>(() => {});
 
   const send = useCallback((msg: LogToHostMsg) => {
     getVsCodeApi().postMessage(msg);
@@ -86,6 +87,9 @@ function App() {
         case 'LOG_REFS_UPDATE':
           store.updateBranches(msg.repoId, msg.branches);
           break;
+        case 'LOG_REFRESH':
+          reloadRef.current();
+          break;
         case 'LOG_BRANCH_OP_RESULT':
           if (!msg.ok && msg.error) {
             console.error('Branch operation failed:', msg.error);
@@ -127,6 +131,9 @@ function App() {
       filterDateTo: f.dateTo || undefined,
     });
   }, [send]);
+
+  // Keep reloadRef current so the message handler (mounted once) always calls the latest version
+  reloadRef.current = reloadCommits;
 
   // Load more on scroll
   const handleLoadMore = useCallback(() => {

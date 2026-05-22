@@ -193,6 +193,9 @@ export function CommitList({ commits, selectedHash, repoColors, repos, onSelect,
               </div>
 
               <div style={styles.meta}>
+                {commit.unpushed && (
+                  <Codicon name="arrow-up" style={styles.unpushedIcon} title="Not pushed" />
+                )}
                 <span style={styles.author}>{commit.authorName}</span>
                 <span style={styles.date}>{formatDateTime(commit.authorDate)}</span>
               </div>
@@ -504,6 +507,12 @@ const styles = {
     fontSize: '11px',
     opacity: 0.65,
   },
+  unpushedIcon: {
+    fontSize: '12px',
+    opacity: 0.75,
+    color: 'var(--vscode-gitDecoration-addedResourceForeground)',
+    flexShrink: 0,
+  } as React.CSSProperties,
   author: {
     maxWidth: '100px',
     overflow: 'hidden',

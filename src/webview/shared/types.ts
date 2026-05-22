@@ -31,6 +31,7 @@ export interface CommitNode {
   committerDate: string;
   parents: string[];
   refs: string[];
+  unpushed?: boolean;
   lane?: number;
   totalLanes?: number;
   graphLines?: GraphLine[];

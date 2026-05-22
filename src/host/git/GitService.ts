@@ -321,7 +321,35 @@ export class GitService {
       const [hash, shortHash, parentsRaw, authorName, authorEmail, authorDate, committerDate, refsRaw, message] = parts;
       commits.push({ hash, shortHash, repoId: this.repoId, message, authorName, authorEmail, authorDate, committerDate, parents: parentsRaw ? parentsRaw.split(' ').filter(Boolean) : [], refs: refsRaw ? refsRaw.split(',').map(r => r.trim()).filter(Boolean) : [] });
     }
+
+    // Mark unpushed commits: hashes that are ahead of their remote tracking branch.
+    const unpushedHashes = await this.getUnpushedHashes();
+    if (unpushedHashes.size > 0) {
+      for (const c of commits) {
+        if (unpushedHashes.has(c.hash)) c.unpushed = true;
+      }
+    }
+
     return commits;
+  }
+
+  private async getUnpushedHashes(): Promise<Set<string>> {
+    try {
+      const vsRepo = this.vsRepo();
+      if (vsRepo) {
+        const upstream = vsRepo.state.HEAD?.upstream;
+        if (!upstream || (vsRepo.state.HEAD?.ahead ?? 0) === 0) return new Set();
+        const upstreamRef = `${upstream.remote}/${upstream.name}`;
+        const raw = await this.git.raw(['log', '--format=%H', `${upstreamRef}..HEAD`]);
+        return new Set(raw.trim().split('\n').filter(Boolean));
+      }
+      const tracking = (await this.git.raw(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).catch(() => '')).trim();
+      if (!tracking) return new Set();
+      const raw = await this.git.raw(['log', '--format=%H', `${tracking}..HEAD`]);
+      return new Set(raw.trim().split('\n').filter(Boolean));
+    } catch {
+      return new Set();
+    }
   }
 
   async getCommitFiles(hash: string): Promise<Array<{ path: string; status: string; added?: number; removed?: number }>> {
@@ -420,7 +448,7 @@ export class GitService {
 
   async stageFiles(paths: string[]): Promise<void> {
     const vsRepo = this.vsRepo();
-    if (vsRepo) { await vsRepo.add(paths); return; }
+    if (vsRepo) { await vsRepo.add(paths.map(p => path.resolve(this.rootPath, p))); return; }
     await this.git.add(paths);
   }
 
@@ -440,7 +468,7 @@ export class GitService {
 
   async unstageFiles(paths: string[]): Promise<void> {
     const vsRepo = this.vsRepo();
-    if (vsRepo) { await vsRepo.revert(paths); return; }
+    if (vsRepo) { await vsRepo.revert(paths.map(p => path.resolve(this.rootPath, p))); return; }
     await this.git.reset(['HEAD', '--', ...paths]);
   }
 
