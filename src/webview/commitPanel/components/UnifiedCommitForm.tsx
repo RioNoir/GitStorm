@@ -190,7 +190,7 @@ export function UnifiedCommitForm({
                 )}
               </>
             ) : (
-              <div style={styles.pushRow}>
+              <div style={{ ...styles.pushRow, justifyContent: 'space-between' }}>
                 <span style={styles.pushAhead}>↑{pushableRepos[0].branch.aheadBehind?.ahead ?? 0} commit{(pushableRepos[0].branch.aheadBehind?.ahead ?? 0) !== 1 ? 's' : ''}</span>
                 <button
                   style={styles.pushBtn(canPushAll)}
