@@ -801,6 +801,26 @@ export class GitLogPanelProvider implements vscode.WebviewViewProvider, vscode.D
         this.post({ type: 'LOG_COMMIT_BRANCHES_RESULT', requestId: msg.requestId, branches });
         break;
       }
+
+      case 'LOG_OPEN_COMMIT_BODY': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_COMMIT_BODY_RESULT', requestId: msg.requestId, hasBody: false }); return; }
+        try {
+          const full = (await repo.getFullCommitMessage(msg.hash)).trim();
+          const lines = full.split('\n');
+          // A body exists when there are non-empty lines after the subject line
+          const bodyLines = lines.slice(1).filter(l => l.trim() !== '');
+          const hasBody = bodyLines.length > 0;
+          if (hasBody) {
+            const doc = await vscode.workspace.openTextDocument({ content: full, language: 'markdown' });
+            await vscode.window.showTextDocument(doc, { preview: true });
+          }
+          this.post({ type: 'LOG_COMMIT_BODY_RESULT', requestId: msg.requestId, hasBody });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_COMMIT_BODY_RESULT', requestId: msg.requestId, hasBody: false });
+        }
+        break;
+      }
     }
   }
 

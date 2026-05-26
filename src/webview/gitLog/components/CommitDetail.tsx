@@ -315,6 +315,22 @@ export function CommitDetail({ commit, files, selectedFile, loadingFiles, repoCo
     setMessageExpanded(false);
   }, [commit?.hash]);
 
+  const handleMessageClick = useCallback(() => {
+    if (!commit) return;
+    const reqId = generateId();
+    pendingRef.current.set(reqId, (msg) => {
+      if (msg.type === 'LOG_COMMIT_BODY_RESULT' && !msg.hasBody) {
+        setMessageExpanded(e => !e);
+      }
+    });
+    getVsCodeApi().postMessage({
+      type: 'LOG_OPEN_COMMIT_BODY',
+      requestId: reqId,
+      repoId: commit.repoId,
+      hash: commit.hash,
+    } satisfies LogToHostMsg);
+  }, [commit]);
+
   useEffect(() => {
     setSelectedMergeHash(null);
     setMergeFiles([]);
@@ -429,7 +445,7 @@ export function CommitDetail({ commit, files, selectedFile, loadingFiles, repoCo
           <span
             style={{ ...styles.message, ...(messageExpanded ? styles.messageExpanded : {}) }}
             title={messageExpanded ? 'Click to collapse' : 'Click to expand'}
-            onClick={() => setMessageExpanded(e => !e)}
+            onClick={messageExpanded ? () => setMessageExpanded(false) : handleMessageClick}
           >
             {commit.message}
           </span>

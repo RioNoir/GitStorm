@@ -127,7 +127,8 @@ export type HostToLogMsg =
   | { type: 'LOG_MERGE_COMMITS_RESULT'; requestId: string; commits: MergeParentCommit[]; error?: string }
   | { type: 'LOG_FILE_OP_RESULT'; requestId: string; ok: boolean; error?: string }
   | { type: 'LOG_COMMIT_BRANCHES_RESULT'; requestId: string; branches: string[] }
-  | { type: 'LOG_SCROLL_TO_COMMIT'; hash: string; repoId: string };
+  | { type: 'LOG_SCROLL_TO_COMMIT'; hash: string; repoId: string }
+  | { type: 'LOG_COMMIT_BODY_RESULT'; requestId: string; hasBody: boolean };
 
 // ─── Git Log: WebView → Host ─────────────────────────────────────────────────
 
@@ -163,7 +164,8 @@ export type LogToHostMsg =
   | { type: 'LOG_EDIT_COMMIT_MESSAGE'; requestId: string; repoId: string; hash: string; currentMessage: string }
   | { type: 'LOG_NEW_BRANCH_FROM_COMMIT'; requestId: string; repoId: string; hash: string }
   | { type: 'LOG_CREATE_TAG'; requestId: string; repoId: string; hash: string }
-  | { type: 'LOG_REQUEST_COMMIT_BRANCHES'; requestId: string; repoId: string; hash: string };
+  | { type: 'LOG_REQUEST_COMMIT_BRANCHES'; requestId: string; repoId: string; hash: string }
+  | { type: 'LOG_OPEN_COMMIT_BODY'; requestId: string; repoId: string; hash: string };
 
 // ─── Merge Editor: Host → WebView ────────────────────────────────────────────
 

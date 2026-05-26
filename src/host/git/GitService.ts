@@ -842,6 +842,10 @@ export class GitService {
     return out.split('\n').map(b => b.trim()).filter(Boolean);
   }
 
+  async getFullCommitMessage(hash: string): Promise<string> {
+    return this.git.raw(['log', '-1', '--format=%B', hash]);
+  }
+
   async getLastCommitMessage(): Promise<string> {
     const vsRepo = this.vsRepo();
     if (vsRepo) {
