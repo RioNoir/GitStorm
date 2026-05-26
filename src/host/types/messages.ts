@@ -107,7 +107,9 @@ export type CommitToHostMsg =
   | { type: 'STASH_DROP'; requestId: string; repoId: string; stashRef: string }
   | { type: 'STASH_OPEN_FILE_DIFF'; repoId: string; stashRef: string; filePath: string }
   | { type: 'PUSH_GET_UNPUSHED'; requestId: string; repoId: string }
-  | { type: 'COMMIT_OPEN_ALL_CHANGES'; repoId: string };
+  | { type: 'COMMIT_OPEN_ALL_CHANGES'; repoId: string }
+  | { type: 'COMMIT_OPEN_LOG'; hash: string; repoId: string }
+  | { type: 'COMMIT_UNDO_COMMIT'; requestId: string; repoId: string };
 
 // ─── Git Log: Host → WebView ─────────────────────────────────────────────────
 
@@ -123,7 +125,9 @@ export type HostToLogMsg =
   | { type: 'LOG_REMOTES_RESULT'; requestId: string; remotes: string[]; error?: string }
   | { type: 'LOG_REFRESH' }
   | { type: 'LOG_MERGE_COMMITS_RESULT'; requestId: string; commits: MergeParentCommit[]; error?: string }
-  | { type: 'LOG_FILE_OP_RESULT'; requestId: string; ok: boolean; error?: string };
+  | { type: 'LOG_FILE_OP_RESULT'; requestId: string; ok: boolean; error?: string }
+  | { type: 'LOG_COMMIT_BRANCHES_RESULT'; requestId: string; branches: string[] }
+  | { type: 'LOG_SCROLL_TO_COMMIT'; hash: string; repoId: string };
 
 // ─── Git Log: WebView → Host ─────────────────────────────────────────────────
 
@@ -148,7 +152,18 @@ export type LogToHostMsg =
   | { type: 'LOG_REVERT_COMMIT'; requestId: string; repoId: string; hash: string }
   | { type: 'LOG_RESET_TO'; requestId: string; repoId: string; hash: string; mode: 'soft' | 'mixed' | 'hard' }
   | { type: 'LOG_CREATE_PATCH'; requestId: string; repoId: string; hash: string }
-  | { type: 'LOG_REQUEST_MERGE_COMMITS'; requestId: string; repoId: string; hash: string; parents: string[] };
+  | { type: 'LOG_REQUEST_MERGE_COMMITS'; requestId: string; repoId: string; hash: string; parents: string[] }
+  | { type: 'LOG_DROP_COMMIT'; requestId: string; repoId: string; hash: string }
+  | { type: 'LOG_SQUASH_COMMITS'; requestId: string; repoId: string; hashes: string[]; oldestHash: string; message: string }
+  | { type: 'LOG_CHERRY_PICK_MULTI'; requestId: string; repoId: string; hashes: string[] }
+  | { type: 'LOG_REVERT_COMMITS'; requestId: string; repoId: string; hashes: string[] }
+  | { type: 'LOG_DROP_COMMITS'; requestId: string; repoId: string; hashes: string[]; oldestHash: string }
+  | { type: 'LOG_CREATE_PATCH_MULTI'; requestId: string; repoId: string; hashes: string[] }
+  | { type: 'LOG_UNDO_COMMIT'; requestId: string; repoId: string }
+  | { type: 'LOG_EDIT_COMMIT_MESSAGE'; requestId: string; repoId: string; hash: string; currentMessage: string }
+  | { type: 'LOG_NEW_BRANCH_FROM_COMMIT'; requestId: string; repoId: string; hash: string }
+  | { type: 'LOG_CREATE_TAG'; requestId: string; repoId: string; hash: string }
+  | { type: 'LOG_REQUEST_COMMIT_BRANCHES'; requestId: string; repoId: string; hash: string };
 
 // ─── Merge Editor: Host → WebView ────────────────────────────────────────────
 

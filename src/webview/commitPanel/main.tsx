@@ -172,12 +172,18 @@ function App() {
           break;
         case 'COMMIT_OP_RESULT':
           store.setLoading(false);
-          if (!msg.ok && msg.error) store.setError(msg.error);
+          if (msg.ok) {
+            // Refresh push tab after any successful operation (commit, undo, push, etc.)
+            const currentRepos = useCommitStore.getState().status?.repos ?? [];
+            currentRepos.forEach(r => requestUnpushedCommits(r.repoId));
+          } else if (msg.error && msg.error !== 'Cancelled') {
+            store.setError(msg.error);
+          }
           break;
         case 'COMMIT_GENERATE_MESSAGE_RESULT':
           setGeneratingMessage(false);
           if (msg.message) store.setCommitMessage(msg.message);
-          else if (msg.error) store.setError(msg.error);
+          else if (msg.error && msg.error !== 'Cancelled') store.setError(msg.error);
           break;
         case 'SHELVE_LIST_RESULT':
           setShelveLoading(prev => ({ ...prev, [msg.repoId]: false }));
@@ -289,7 +295,13 @@ function App() {
   // ── Push / unpushed callbacks ─────────────────────────────────────────────
 
   const requestUnpushedCommits = useCallback((repoId: string) => {
-    setUnpushedMap(prev => ({ ...prev, [repoId]: { loading: true, commits: [] } }));
+    setUnpushedMap(prev => ({
+      ...prev,
+      // Keep existing commits visible while refreshing; only clear on first load
+      [repoId]: prev[repoId]
+        ? { ...prev[repoId], loading: true }
+        : { loading: true, commits: [] },
+    }));
     send({ type: 'PUSH_GET_UNPUSHED', requestId: generateId(), repoId });
   }, [send]);
 
@@ -303,6 +315,15 @@ function App() {
   const repos = store.status?.repos ?? [];
   const metaMap = new Map(store.repoMetas.map(m => [m.id, m]));
   const multiRepo = repos.length > 1;
+
+  // When the push tab is open, refresh no-upstream repos whenever the set of those repos changes
+  // (e.g. a branch gains/loses its remote tracking branch). Upstream repos are live via aheadBehind.ahead.
+  // Full refresh on every status update is intentionally avoided to prevent visual noise.
+  const noUpstreamKey = repos.filter(r => !r.branch.upstream).map(r => r.repoId).join(',');
+  useEffect(() => {
+    if (activeTab !== 'push' || !noUpstreamKey) return;
+    noUpstreamKey.split(',').forEach(id => requestUnpushedCommits(id));
+  }, [noUpstreamKey]);
 
   // ── Context menu handlers ─────────────────────────────────────────────────
 
@@ -400,6 +421,14 @@ function App() {
 
   const doPush = (repoId: string) => {
     send({ type: 'COMMIT_PUSH_REPO', requestId: generateId(), repoId, remote: 'origin' });
+  };
+
+  const doOpenInLog = (hash: string, repoId: string) => {
+    send({ type: 'COMMIT_OPEN_LOG', hash, repoId });
+  };
+
+  const doUndoCommit = (repoId: string) => {
+    send({ type: 'COMMIT_UNDO_COMMIT', requestId: generateId(), repoId });
   };
 
   const doPushAll = () => {
@@ -569,31 +598,42 @@ function App() {
       </div>
 
       {/* ── Tab bar ── */}
-      <div style={css.tabBar}>
-        {(['changes', 'shelf', 'stash', 'push'] as TabId[]).map(tab => (
-          <button
-            key={tab}
-            style={css.tab(activeTab === tab)}
-            title={tab === 'changes' ? 'Changes' : tab === 'shelf' ? 'Shelf' : tab === 'stash' ? 'Stash' : 'Push'}
-            onClick={() => {
-              setActiveTab(tab);
-              if (tab === 'shelf') repos.forEach(r => requestShelveList(r.repoId));
-              if (tab === 'stash') repos.forEach(r => requestStashList(r.repoId));
-              if (tab === 'push') repos.forEach(r => requestUnpushedCommits(r.repoId));
-            }}
-          >
-            <Codicon
-              name={tab === 'changes' ? 'source-control' : tab === 'shelf' ? 'archive' : tab === 'stash' ? 'save' : 'cloud-upload'}
-              style={{ marginRight: activeTab === tab ? '5px' : '0', fontSize: '13px', transition: 'margin 0.15s' }}
-            />
-            {activeTab === tab && (
-              <span style={{ animation: 'gs-tab-label-in 0.18s ease-out both', overflow: 'hidden', display: 'inline-block' }}>
-                {tab === 'changes' ? 'Changes' : tab === 'shelf' ? 'Shelf' : tab === 'stash' ? 'Stash' : 'Push'}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
+      {(() => {
+        const totalToPush = repos.reduce((sum, r) => {
+          if (r.branch.upstream) return sum + (r.branch.aheadBehind?.ahead ?? 0);
+          return sum + (unpushedMap[r.repoId]?.commits?.length ?? 0);
+        }, 0);
+        return (
+          <div style={css.tabBar}>
+            {(['changes', 'shelf', 'stash', 'push'] as TabId[]).map(tab => (
+              <button
+                key={tab}
+                style={css.tab(activeTab === tab)}
+                title={tab === 'changes' ? 'Changes' : tab === 'shelf' ? 'Shelf' : tab === 'stash' ? 'Stash' : 'Push'}
+                onClick={() => {
+                  setActiveTab(tab);
+                  if (tab === 'shelf') repos.forEach(r => requestShelveList(r.repoId));
+                  if (tab === 'stash') repos.forEach(r => requestStashList(r.repoId));
+                  if (tab === 'push') repos.forEach(r => requestUnpushedCommits(r.repoId));
+                }}
+              >
+                <Codicon
+                  name={tab === 'changes' ? 'source-control' : tab === 'shelf' ? 'archive' : tab === 'stash' ? 'save' : 'cloud-upload'}
+                  style={{ marginRight: activeTab === tab ? '5px' : '0', fontSize: '13px', transition: 'margin 0.15s' }}
+                />
+                {activeTab === tab && (
+                  <span style={{ animation: 'gs-tab-label-in 0.18s ease-out both', overflow: 'hidden', display: 'inline-block' }}>
+                    {tab === 'changes' ? 'Changes' : tab === 'shelf' ? 'Shelf' : tab === 'stash' ? 'Stash' : 'Push'}
+                  </span>
+                )}
+                {tab === 'push' && totalToPush > 0 && (
+                  <span style={css.pushBadge}>{totalToPush}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* ── Error / info notification bar ── */}
       {store.error && (
@@ -790,6 +830,8 @@ function App() {
               unpushedMap={unpushedMap}
               onPush={doPush}
               onPushAll={doPushAll}
+              onOpenInLog={doOpenInLog}
+              onUndoCommit={doUndoCommit}
             />
           </div>
         )}
@@ -906,6 +948,17 @@ const css = {
     fontWeight: active ? '600' : 'normal', whiteSpace: 'nowrap' as const,
     transition: 'opacity 0.1s, border-color 0.1s', color: 'var(--vscode-foreground)',
   }),
+  pushBadge: {
+    background: 'var(--vscode-badge-background)',
+    color: 'var(--vscode-badge-foreground)',
+    borderRadius: '8px',
+    padding: '0 5px',
+    fontSize: '10px',
+    fontWeight: 'bold' as const,
+    lineHeight: '16px',
+    marginLeft: '5px',
+    flexShrink: 0,
+  } as React.CSSProperties,
   main: { display: 'flex', flexDirection: 'column' as const, flex: 1, overflow: 'hidden' },
   repoList: { flex: 1, overflowY: 'auto' as const },
   // Shelve name prompt bar (above commit form)

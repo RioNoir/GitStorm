@@ -7,13 +7,19 @@ import type { CommitToHostMsg, HostToCommitMsg } from '../types/messages';
 import { parseConflictFile } from '../git/ConflictParser';
 import { loadIconTheme } from '../utils/IconThemeService';
 import type { MergeEditorProvider } from './MergeEditorProvider';
+import type { GitLogPanelProvider } from './GitLogPanelProvider';
 
 export class CommitPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'gitstorm.commitPanel';
   private view?: vscode.WebviewView;
+  private logProvider?: GitLogPanelProvider;
 
   setMergeEditorProvider(provider: MergeEditorProvider): void {
     this.mergeEditorProvider = provider;
+  }
+
+  setLogProvider(provider: GitLogPanelProvider): void {
+    this.logProvider = provider;
   }
   private shelveServices = new Map<string, ShelveService>();
 
@@ -874,6 +880,30 @@ export class CommitPanelProvider implements vscode.WebviewViewProvider {
           this.post({ type: 'STASH_OP_RESULT', requestId: msg.requestId, repoId: msg.repoId, op: 'push', ok: true });
         } catch (e: unknown) {
           this.post({ type: 'STASH_OP_RESULT', requestId: msg.requestId, repoId: msg.repoId, op: 'push', ok: false, error: String(e) });
+        }
+        break;
+      }
+
+      case 'COMMIT_OPEN_LOG': {
+        this.logProvider?.selectCommit(msg.hash, msg.repoId);
+        break;
+      }
+
+      case 'COMMIT_UNDO_COMMIT': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'COMMIT_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        const confirm = await vscode.window.showWarningMessage(
+          'Undo last commit? Changes will be kept as unstaged (git reset --soft HEAD~1).',
+          { modal: true }, 'Undo Commit'
+        );
+        if (confirm !== 'Undo Commit') { this.post({ type: 'COMMIT_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' }); return; }
+        try {
+          await repo.undoCommit();
+          this.post({ type: 'COMMIT_OP_RESULT', requestId: msg.requestId, ok: true });
+          const status = await this.manager.getAllStatusesFresh();
+          this.post({ type: 'COMMIT_STATUS_UPDATE', repos: this.manager.getRepoMetas(), status });
+        } catch (e: unknown) {
+          this.post({ type: 'COMMIT_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
         }
         break;
       }

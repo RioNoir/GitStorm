@@ -132,20 +132,44 @@ export function UnifiedCommitForm({
   const amend = amendFlags[amendRepoId ?? ''] ?? false;
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
+
+  const resizeTextarea = () => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [message]);
+    const maxHeight = Math.floor(window.innerHeight / 2);
+    if (el.scrollHeight > maxHeight) {
+      el.style.height = `${maxHeight}px`;
+      el.style.overflow = 'auto';
+    } else {
+      el.style.height = `${el.scrollHeight}px`;
+      el.style.overflow = 'hidden';
+    }
+  };
+
+  useEffect(() => { resizeTextarea(); }, [message]);
+
+  useEffect(() => {
+    window.addEventListener('resize', resizeTextarea);
+    return () => window.removeEventListener('resize', resizeTextarea);
+  }, []);
 
   useEffect(() => {
     const id = 'gs-textarea-pulse-kf';
-    if (document.getElementById(id)) return;
-    const s = document.createElement('style');
-    s.id = id;
-    s.textContent = `@keyframes gs-textarea-pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 0.35; } }`;
-    document.head.appendChild(s);
+    let s = document.getElementById(id) as HTMLStyleElement | null;
+    if (!s) {
+      s = document.createElement('style');
+      s.id = id;
+      document.head.appendChild(s);
+    }
+    s.textContent = `
+      @keyframes gs-textarea-pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 0.35; } }
+      .gs-commit-textarea::-webkit-scrollbar { width: 4px; background: transparent; }
+      .gs-commit-textarea::-webkit-scrollbar-track { background: transparent; }
+      .gs-commit-textarea::-webkit-scrollbar-corner { background: transparent; }
+      .gs-commit-textarea::-webkit-scrollbar-thumb { background: var(--vscode-scrollbarSlider-background); border-radius: 2px; }
+      .gs-commit-textarea::-webkit-scrollbar-thumb:hover { background: var(--vscode-scrollbarSlider-hoverBackground); }
+    `;
   }, []);
 
   return (
@@ -186,7 +210,12 @@ export function UnifiedCommitForm({
       <div style={styles.textareaWrap}>
         <textarea
           ref={textareaRef}
-          style={styles.textarea(generatingMessage)}
+          className="gs-commit-textarea"
+          style={{
+            ...styles.textarea(generatingMessage),
+            scrollbarWidth: 'thin',
+            scrollbarColor: `var(--vscode-scrollbarSlider-background) transparent`,
+          } as React.CSSProperties}
           value={message}
           onChange={(e) => onMessageChange(e.target.value)}
           placeholder={generatingMessage ? 'Generating commit message…' : 'Commit message (Cmd+Enter to commit)'}
@@ -226,6 +255,7 @@ export function UnifiedCommitForm({
             disabled={!canCommit}
             title={canCommit ? commitLabel : 'Stage files and write a message first'}
           >
+            <Codicon name="check" style={{ marginRight: '5px', fontSize: '13px' }} />
             {commitLabel}
           </button>
           <button
@@ -234,6 +264,7 @@ export function UnifiedCommitForm({
             disabled={!canCommit}
             title="Commit and push"
           >
+            <Codicon name="cloud-upload" style={{ marginRight: '5px', fontSize: '13px' }} />
             {pushLabel}
           </button>
         </div>
@@ -345,7 +376,7 @@ const styles = {
   textarea: (generating: boolean): React.CSSProperties => ({
     width: '100%',
     resize: 'none' as const,
-    overflow: 'hidden',
+    overflow: 'hidden',   // overridden dynamically by resizeTextarea
     minHeight: '52px',
     background: 'var(--vscode-input-background)',
     color: 'var(--vscode-input-foreground)',
@@ -417,6 +448,7 @@ const styles = {
     userSelect: 'none' as const,
   } as React.CSSProperties,
   commitBtn: (enabled: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center',
     padding: '4px 12px',
     background: 'var(--vscode-button-background)',
     color: 'var(--vscode-button-foreground)',
@@ -428,6 +460,7 @@ const styles = {
     fontWeight: 'bold',
   }),
   commitAndPushBtn: (enabled: boolean): React.CSSProperties => ({
+    display: 'flex', alignItems: 'center',
     padding: '4px 12px',
     background: 'var(--vscode-button-secondaryBackground, #5a5a5a)',
     color: 'var(--vscode-button-secondaryForeground, #ffffff)',

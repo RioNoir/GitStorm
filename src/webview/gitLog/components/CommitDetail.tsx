@@ -268,6 +268,9 @@ export function CommitDetail({ commit, files, selectedFile, loadingFiles, repoCo
   const [loadingMergeFiles, setLoadingMergeFiles] = useState(false);
   const pendingRef = useRef<Map<string, (msg: HostToLogMsg) => void>>(new Map());
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; file: FileEntry } | null>(null);
+  const [containingBranches, setContainingBranches] = useState<string[]>([]);
+  const [loadingBranches, setLoadingBranches] = useState(false);
+  const [messageExpanded, setMessageExpanded] = useState(false);
 
   const repoName = useMemo(() => {
     if (!commit) return null;
@@ -289,6 +292,28 @@ export function CommitDetail({ commit, files, selectedFile, loadingFiles, repoCo
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
   }, []);
+
+  useEffect(() => {
+    if (!commit) { setContainingBranches([]); return; }
+    setLoadingBranches(true);
+    const reqId = generateId();
+    pendingRef.current.set(reqId, (msg) => {
+      if (msg.type === 'LOG_COMMIT_BRANCHES_RESULT') {
+        setContainingBranches(msg.branches);
+        setLoadingBranches(false);
+      }
+    });
+    getVsCodeApi().postMessage({
+      type: 'LOG_REQUEST_COMMIT_BRANCHES',
+      requestId: reqId,
+      repoId: commit.repoId,
+      hash: commit.hash,
+    } satisfies LogToHostMsg);
+  }, [commit?.hash]);
+
+  useEffect(() => {
+    setMessageExpanded(false);
+  }, [commit?.hash]);
 
   useEffect(() => {
     setSelectedMergeHash(null);
@@ -399,9 +424,15 @@ export function CommitDetail({ commit, files, selectedFile, loadingFiles, repoCo
             <span style={styles.repoName(repoColor)}>{repoName}</span>
           </div>
         )}
-        <div style={styles.hashRow}>
+        <div style={{ ...styles.hashRow, alignItems: messageExpanded ? 'flex-start' : 'center' }}>
           <span style={styles.hash}>{commit.shortHash}</span>
-          <span style={styles.message}>{commit.message}</span>
+          <span
+            style={{ ...styles.message, ...(messageExpanded ? styles.messageExpanded : {}) }}
+            title={messageExpanded ? 'Click to collapse' : 'Click to expand'}
+            onClick={() => setMessageExpanded(e => !e)}
+          >
+            {commit.message}
+          </span>
         </div>
         <div style={styles.meta}>
           <span>{commit.authorName}</span>
@@ -410,19 +441,44 @@ export function CommitDetail({ commit, files, selectedFile, loadingFiles, repoCo
           <span style={styles.dot}>·</span>
           <span>{new Date(commit.authorDate).toLocaleString()}</span>
         </div>
-        {commit.refs.length > 0 && (
-          <div style={styles.refsRow}>
-            {groupRefs(commit.refs).map(group => {
-              const color = branchColor(group.label);
-              return (
-                <span key={group.key} style={styles.refBadge(color)} title={badgeTitle(group)}>
-                  <RefBadgeIcon group={group} />
-                  {group.isRemote ? `origin/${group.label}` : group.label}
+        {(() => {
+          const refGroups = groupRefs(commit.refs);
+          const existingLabels = new Set(refGroups.filter(g => !g.isTag).map(g => g.label));
+          const extraBranches = containingBranches.filter(b => !existingLabels.has(b));
+          const extraVisible = extraBranches.slice(0, 8);
+          const extraHidden = extraBranches.slice(8);
+          if (refGroups.length === 0 && extraBranches.length === 0 && !loadingBranches) return null;
+          return (
+            <div style={styles.refsRow}>
+              {refGroups.map(group => {
+                const color = branchColor(group.label);
+                return (
+                  <span key={group.key} style={styles.refBadge(color)} title={badgeTitle(group)}>
+                    <RefBadgeIcon group={group} />
+                    {group.isRemote ? `origin/${group.label}` : group.label}
+                  </span>
+                );
+              })}
+              {extraVisible.map(name => {
+                const color = branchColor(name);
+                return (
+                  <span key={`cb-${name}`} style={styles.refBadge(color)} title={`Branch: ${name}`}>
+                    <Codicon name="git-branch" style={{ fontSize: '11px', flexShrink: 0, lineHeight: 1 }} />
+                    {name}
+                  </span>
+                );
+              })}
+              {extraHidden.length > 0 && (
+                <span style={styles.refsMoreLabel} title={extraHidden.join(', ')}>
+                  +{extraHidden.length}
                 </span>
-              );
-            })}
-          </div>
-        )}
+              )}
+              {loadingBranches && containingBranches.length === 0 && (
+                <span style={styles.refsLoadingLabel}>…</span>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Merged commits section */}
         {isMerge && (
@@ -665,6 +721,14 @@ const styles = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
+    cursor: 'pointer',
+    minWidth: 0,
+  },
+  messageExpanded: {
+    whiteSpace: 'normal' as const,
+    overflow: 'visible',
+    textOverflow: 'clip',
+    wordBreak: 'break-word' as const,
   },
   meta: {
     display: 'flex',
@@ -682,6 +746,19 @@ const styles = {
     flexWrap: 'wrap' as const,
     gap: '4px',
   },
+  refsMoreLabel: {
+    fontSize: '10px',
+    opacity: 0.5,
+    color: 'var(--vscode-foreground)',
+    cursor: 'default',
+    alignSelf: 'center',
+  } as React.CSSProperties,
+  refsLoadingLabel: {
+    fontSize: '10px',
+    opacity: 0.4,
+    color: 'var(--vscode-foreground)',
+    alignSelf: 'center',
+  } as React.CSSProperties,
   refBadge: (color: string): React.CSSProperties => ({
     fontSize: '10px',
     padding: '0 6px',
@@ -826,6 +903,7 @@ const styles = {
     background: selected ? 'var(--vscode-list-activeSelectionBackground)' : 'transparent',
     color: selected ? 'var(--vscode-list-activeSelectionForeground)' : 'var(--vscode-foreground)',
     minHeight: '22px',
+    userSelect: 'none',
   }),
   dirRow: {
     display: 'flex',
@@ -835,6 +913,7 @@ const styles = {
     cursor: 'pointer',
     minHeight: '22px',
     color: 'var(--vscode-foreground)',
+    userSelect: 'none',
   } as React.CSSProperties,
   chevron: {
     fontSize: '10px',

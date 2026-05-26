@@ -345,9 +345,12 @@ export class GitService {
       commits.push({ hash, shortHash, repoId: this.repoId, message, authorName, authorEmail, authorDate, committerDate, parents: parentsRaw ? parentsRaw.split(' ').filter(Boolean) : [], refs: refsRaw ? refsRaw.split(',').map(r => r.trim()).filter(Boolean) : [] });
     }
 
-    // Mark unpushed commits: hashes that are ahead of their remote tracking branch.
+    // Mark unpushed commits: hashes ahead of the remote tracking branch.
+    // 'all' means there is no upstream — every commit on this branch is local.
     const unpushedHashes = await this.getUnpushedHashes();
-    if (unpushedHashes.size > 0) {
+    if (unpushedHashes === 'all') {
+      for (const c of commits) c.unpushed = true;
+    } else if (unpushedHashes.size > 0) {
       for (const c of commits) {
         if (unpushedHashes.has(c.hash)) c.unpushed = true;
       }
@@ -356,19 +359,35 @@ export class GitService {
     return commits;
   }
 
-  private async getUnpushedHashes(): Promise<Set<string>> {
+  private async getUnpushedHashes(): Promise<Set<string> | 'all'> {
     try {
       const vsRepo = this.vsRepo();
       if (vsRepo) {
         const upstream = vsRepo.state.HEAD?.upstream;
-        if (!upstream || (vsRepo.state.HEAD?.ahead ?? 0) === 0) return new Set();
-        const upstreamRef = `${upstream.remote}/${upstream.name}`;
-        const raw = await this.git.raw(['log', '--format=%H', `${upstreamRef}..HEAD`]);
+        if (upstream) {
+          // Known upstream → use it directly
+          if ((vsRepo.state.HEAD?.ahead ?? 0) === 0) return new Set();
+          const upstreamRef = `${upstream.remote}/${upstream.name}`;
+          const raw = await this.git.raw(['log', '--format=%H', `${upstreamRef}..HEAD`]);
+          return new Set(raw.trim().split('\n').filter(Boolean));
+        }
+        // No upstream tracking branch
+        if (vsRepo.state.remotes.length === 0) return 'all'; // no remotes at all → all commits are local
+        // Remotes exist but no tracking → commits not reachable from any remote ref
+        const raw = await this.git.raw(['log', '--format=%H', 'HEAD', '--not', '--remotes']);
         return new Set(raw.trim().split('\n').filter(Boolean));
       }
+
       const tracking = (await this.git.raw(['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']).catch(() => '')).trim();
-      if (!tracking) return new Set();
-      const raw = await this.git.raw(['log', '--format=%H', `${tracking}..HEAD`]);
+      if (tracking) {
+        const raw = await this.git.raw(['log', '--format=%H', `${tracking}..HEAD`]);
+        return new Set(raw.trim().split('\n').filter(Boolean));
+      }
+      // No tracking: check if any remote refs exist at all
+      const remoteRefs = (await this.git.raw(['for-each-ref', '--format=%(refname)', 'refs/remotes/']).catch(() => '')).trim();
+      if (!remoteRefs) return 'all'; // no remote refs → repo is purely local
+      // Remotes exist but no tracking → commits not reachable from any remote ref
+      const raw = await this.git.raw(['log', '--format=%H', 'HEAD', '--not', '--remotes']);
       return new Set(raw.trim().split('\n').filter(Boolean));
     } catch {
       return new Set();
@@ -777,6 +796,52 @@ export class GitService {
     return this.git.raw(['format-patch', '-1', '--stdout', hash]);
   }
 
+  async dropCommit(hash: string): Promise<void> {
+    await this.git.raw(['rebase', '--onto', `${hash}^`, hash]);
+  }
+
+  async squashCommits(oldestHash: string, message: string): Promise<void> {
+    await this.git.raw(['reset', '--soft', `${oldestHash}^`]);
+    await this.git.raw(['commit', '-m', message]);
+  }
+
+  async cherryPickMulti(hashes: string[]): Promise<void> {
+    for (const hash of hashes) {
+      await this.git.raw(['cherry-pick', hash]);
+    }
+  }
+
+  async revertCommits(hashes: string[]): Promise<void> {
+    for (const hash of hashes) {
+      await this.git.raw(['revert', '--no-edit', hash]);
+    }
+  }
+
+  async dropCommits(oldestHash: string): Promise<void> {
+    await this.git.raw(['reset', '--hard', `${oldestHash}^`]);
+  }
+
+  async undoCommit(): Promise<void> {
+    await this.git.raw(['reset', '--soft', 'HEAD~1']);
+  }
+
+  async editCommitMessage(message: string): Promise<void> {
+    await this.git.raw(['commit', '--amend', '-m', message]);
+  }
+
+  async createBranchFromCommit(name: string, hash: string): Promise<void> {
+    await this.git.raw(['checkout', '-b', name, hash]);
+  }
+
+  async createTag(name: string, hash: string): Promise<void> {
+    await this.git.raw(['tag', name, hash]);
+  }
+
+  async getBranchesContaining(hash: string): Promise<string[]> {
+    const out = await this.git.raw(['branch', '--contains', hash, '--format=%(refname:short)']);
+    return out.split('\n').map(b => b.trim()).filter(Boolean);
+  }
+
   async getLastCommitMessage(): Promise<string> {
     const vsRepo = this.vsRepo();
     if (vsRepo) {
@@ -904,9 +969,7 @@ export class GitService {
   // ── Unpushed commits ──────────────────────────────────────────────────────
 
   async getUnpushedCommits(): Promise<UnpushedCommit[]> {
-    try {
-      const raw = await this.git.raw(['log', '@{u}..HEAD', '--format=%H|%h|%s|%an|%ci']);
-      if (!raw.trim()) return [];
+    const parseLines = (raw: string): UnpushedCommit[] => {
       const commits: UnpushedCommit[] = [];
       for (const line of raw.trim().split('\n')) {
         if (!line.trim()) continue;
@@ -921,9 +984,28 @@ export class GitService {
         });
       }
       return commits;
+    };
+
+    try {
+      // Fast path: upstream is configured
+      const raw = await this.git.raw(['log', '@{u}..HEAD', '--format=%H|%h|%s|%an|%ci']);
+      return parseLines(raw);
     } catch {
-      // No upstream set or other error — return empty
-      return [];
+      // No upstream — list commits not reachable from any remote ref
+      try {
+        const remotes = await this.git.getRemotes();
+        let raw: string;
+        if (remotes.length === 0) {
+          // Fully local repo: show recent commits (capped to avoid huge lists)
+          raw = await this.git.raw(['log', 'HEAD', '--max-count=100', '--format=%H|%h|%s|%an|%ci']);
+        } else {
+          // Remotes exist but this branch has no tracking ref
+          raw = await this.git.raw(['log', 'HEAD', '--not', '--remotes', '--format=%H|%h|%s|%an|%ci']);
+        }
+        return parseLines(raw);
+      } catch {
+        return [];
+      }
     }
   }
 }

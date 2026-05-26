@@ -10,6 +10,9 @@ import { Codicon } from '../../shared/Codicon';
 import { getVsCodeApi } from '../../shared/vscodeApi';
 import type { LogToHostMsg } from '../../../host/types/messages';
 
+// Suppress unused import warning — LANE_WIDTH is used by CommitRowSvg indirectly
+void LANE_WIDTH;
+
 interface Props {
   commits: LaidOutCommit[];
   selectedHash: string | null;
@@ -19,6 +22,8 @@ interface Props {
   onLoadMore: () => void;
   hasMore: boolean;
   loading: boolean;
+  scrollToHash?: string | null;
+  onScrolledToHash?: () => void;
 }
 
 interface RepoBlock {
@@ -37,10 +42,11 @@ function generateId() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
-export function CommitList({ commits, selectedHash, repoColors, repos, onSelect, onLoadMore, hasMore, loading }: Props) {
+export function CommitList({ commits, selectedHash, repoColors, repos, onSelect, onLoadMore, hasMore, loading, scrollToHash, onScrolledToHash }: Props) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set());
-  const [contextMenu, setContextMenu] = useState<{ commit: LaidOutCommit; x: number; y: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ commit: LaidOutCommit; x: number; y: number; multiSelected: LaidOutCommit[] } | null>(null);
+  const [multiSelectHashes, setMultiSelectHashes] = useState<Set<string>>(new Set());
 
   const repoMeta = useMemo(() => {
     const map: Record<string, RepoMeta> = {};
@@ -107,6 +113,15 @@ export function CommitList({ commits, selectedHash, repoColors, repos, onSelect,
     return () => el.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  useEffect(() => {
+    if (!scrollToHash) return;
+    const idx = commits.findIndex(c => c.hash === scrollToHash);
+    if (idx < 0) return;
+    virtualizer.scrollToIndex(idx, { align: 'center' });
+    onSelect(commits[idx]);
+    onScrolledToHash?.();
+  }, [scrollToHash, commits]);
+
   const anyExpanded = expandedRepos.size > 0;
   const labelColWidth = multiRepo ? (anyExpanded ? REPO_LABEL_WIDTH_EXPANDED : REPO_LABEL_WIDTH + 2) : 0;
 
@@ -155,13 +170,37 @@ export function CommitList({ commits, selectedHash, repoColors, repos, onSelect,
           const commit = commits[vrow.index];
           if (!commit) return null;
           const isSelected = commit.hash === selectedHash;
+          const isMultiSelected = multiSelectHashes.has(commit.hash);
 
           return (
             <div
               key={commit.hash}
-              style={styles.row(vrow.start, isSelected)}
-              onClick={() => onSelect(commit)}
-              onContextMenu={e => { e.preventDefault(); e.stopPropagation(); setContextMenu({ commit, x: e.clientX, y: e.clientY }); }}
+              style={styles.row(vrow.start, isSelected, isMultiSelected)}
+              onClick={(e) => {
+                if (e.ctrlKey || e.metaKey) {
+                  setMultiSelectHashes(prev => {
+                    const next = new Set(prev);
+                    // If starting a new multi-select, auto-include the currently single-selected commit
+                    if (next.size === 0 && selectedHash && selectedHash !== commit.hash) {
+                      next.add(selectedHash);
+                    }
+                    if (next.has(commit.hash)) next.delete(commit.hash); else next.add(commit.hash);
+                    return next;
+                  });
+                } else {
+                  setMultiSelectHashes(new Set());
+                  onSelect(commit);
+                }
+              }}
+              onContextMenu={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                const isInMulti = multiSelectHashes.has(commit.hash) && multiSelectHashes.size > 1;
+                const multiSelected = isInMulti
+                  ? commits.filter(c => multiSelectHashes.has(c.hash))
+                  : [];
+                setContextMenu({ commit, x: e.clientX, y: e.clientY, multiSelected });
+              }}
               title={`${commit.hash}\n${commit.authorName} <${commit.authorEmail}>\n${commit.authorDate}`}
             >
               {labelColWidth > 0 && <div style={{ width: labelColWidth, flexShrink: 0 }} />}
@@ -215,20 +254,48 @@ export function CommitList({ commits, selectedHash, repoColors, repos, onSelect,
           commit={contextMenu.commit}
           x={contextMenu.x}
           y={contextMenu.y}
+          multiSelected={contextMenu.multiSelected}
+          allCommits={commits}
           onClose={() => setContextMenu(null)}
+          onSquash={(selected) => {
+            setContextMenu(null);
+            let maxIdx = -1;
+            let oldestHash = selected[0].hash;
+            for (const c of selected) {
+              const idx = commits.findIndex(x => x.hash === c.hash);
+              if (idx > maxIdx) { maxIdx = idx; oldestHash = c.hash; }
+            }
+            getVsCodeApi().postMessage({
+              type: 'LOG_SQUASH_COMMITS',
+              requestId: generateId(),
+              repoId: selected[0].repoId,
+              hashes: selected.map(c => c.hash),
+              oldestHash,
+              message: selected.map(c => c.message).join('\n\n'),
+            } satisfies LogToHostMsg);
+            setMultiSelectHashes(new Set());
+          }}
         />
       )}
     </div>
   );
 }
 
-function CommitContextMenu({ commit, x, y, onClose }: {
+function CommitContextMenu({ commit, x, y, multiSelected, allCommits, onClose, onSquash }: {
   commit: LaidOutCommit;
   x: number;
   y: number;
+  multiSelected: LaidOutCommit[];
+  allCommits: LaidOutCommit[];
   onClose: () => void;
+  onSquash: (selected: LaidOutCommit[]) => void;
 }) {
   const [showResetSub, setShowResetSub] = useState(false);
+
+  const isMulti = multiSelected.length > 1 && multiSelected.every(c => c.repoId === multiSelected[0].repoId);
+  const allUnpushed = isMulti && multiSelected.every(c => c.unpushed);
+  // HEAD for this repo = the first commit in allCommits with the same repoId
+  const isHead = allCommits.find(c => c.repoId === commit.repoId)?.hash === commit.hash;
 
   function send(msg: LogToHostMsg) {
     getVsCodeApi().postMessage(msg);
@@ -240,19 +307,85 @@ function CommitContextMenu({ commit, x, y, onClose }: {
     onClose();
   }
 
+  // Build index map once for sorting (higher index = older commit in log)
+  const indexMap = new Map<string, number>();
+  allCommits.forEach((c, i) => indexMap.set(c.hash, i));
+  const sortedOldestFirst = [...multiSelected].sort((a, b) => (indexMap.get(b.hash) ?? 0) - (indexMap.get(a.hash) ?? 0));
+  const sortedNewestFirst = [...multiSelected].sort((a, b) => (indexMap.get(a.hash) ?? 0) - (indexMap.get(b.hash) ?? 0));
+
+  const repoId = isMulti ? multiSelected[0].repoId : commit.repoId;
+  const oldestHash = sortedOldestFirst[0]?.hash ?? commit.hash;
+
+  if (isMulti) {
+    return (
+      <>
+        <div style={ctxStyles.backdrop} onClick={onClose} />
+        <div style={ctxStyles.menu(x, y)}>
+          <div style={ctxStyles.header}>{multiSelected.length} commits selected</div>
+          <div style={ctxStyles.separator} />
+          <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_CREATE_PATCH_MULTI', requestId: generateId(), repoId, hashes: multiSelected.map(c => c.hash) })}>
+            <Codicon name="diff" style={ctxStyles.icon} />
+            <span>Create Patch...</span>
+          </div>
+          <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_CHERRY_PICK_MULTI', requestId: generateId(), repoId, hashes: sortedOldestFirst.map(c => c.hash) })}>
+            <Codicon name="git-commit" style={ctxStyles.icon} />
+            <span>Cherry-Pick All</span>
+          </div>
+          <div style={ctxStyles.separator} />
+          <div style={ctxStyles.itemDisabled}>
+            <Codicon name="history" style={ctxStyles.icon} />
+            <span>Reset Current Branch to Here</span>
+          </div>
+          <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_REVERT_COMMITS', requestId: generateId(), repoId, hashes: sortedNewestFirst.map(c => c.hash) })}>
+            <Codicon name="discard" style={ctxStyles.icon} />
+            <span>Revert Commits</span>
+          </div>
+          {allUnpushed && (
+            <>
+              <div style={ctxStyles.separator} />
+              <div
+                style={{ ...ctxStyles.item, color: 'var(--vscode-errorForeground)' }}
+                onClick={() => send({ type: 'LOG_DROP_COMMITS', requestId: generateId(), repoId, hashes: multiSelected.map(c => c.hash), oldestHash })}
+              >
+                <Codicon name="trash" style={ctxStyles.icon} />
+                <span>Drop Commits</span>
+              </div>
+              <div style={ctxStyles.item} onClick={() => onSquash(multiSelected)}>
+                <Codicon name="fold-down" style={ctxStyles.icon} />
+                <span>Squash {multiSelected.length} Commits...</span>
+              </div>
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <div style={ctxStyles.backdrop} onClick={onClose} />
       <div style={ctxStyles.menu(x, y)}>
         <div style={ctxStyles.item} onClick={copyHash}>
-          Copy Revision Number
+          <Codicon name="copy" style={ctxStyles.icon} />
+          <span>Copy Revision Number</span>
+        </div>
+        <div style={ctxStyles.separator} />
+        <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_NEW_BRANCH_FROM_COMMIT', requestId: generateId(), repoId: commit.repoId, hash: commit.hash })}>
+          <Codicon name="git-branch" style={ctxStyles.icon} />
+          <span>New Branch...</span>
+        </div>
+        <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_CREATE_TAG', requestId: generateId(), repoId: commit.repoId, hash: commit.hash })}>
+          <Codicon name="tag" style={ctxStyles.icon} />
+          <span>New Tag...</span>
         </div>
         <div style={ctxStyles.separator} />
         <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_CREATE_PATCH', requestId: generateId(), repoId: commit.repoId, hash: commit.hash })}>
-          Create Patch...
+          <Codicon name="diff" style={ctxStyles.icon} />
+          <span>Create Patch...</span>
         </div>
         <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_CHERRY_PICK', requestId: generateId(), repoId: commit.repoId, hash: commit.hash })}>
-          Cherry-Pick
+          <Codicon name="git-commit" style={ctxStyles.icon} />
+          <span>Cherry-Pick</span>
         </div>
         <div style={ctxStyles.separator} />
         <div
@@ -260,7 +393,8 @@ function CommitContextMenu({ commit, x, y, onClose }: {
           onMouseEnter={() => setShowResetSub(true)}
           onMouseLeave={() => setShowResetSub(false)}
         >
-          <span>Reset Current Branch to Here</span>
+          <Codicon name="history" style={ctxStyles.icon} />
+          <span style={{ flex: 1 }}>Reset Current Branch to Here</span>
           <span style={ctxStyles.arrow}>▶</span>
           {showResetSub && (
             <div style={ctxStyles.submenu}>
@@ -277,8 +411,34 @@ function CommitContextMenu({ commit, x, y, onClose }: {
           )}
         </div>
         <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_REVERT_COMMIT', requestId: generateId(), repoId: commit.repoId, hash: commit.hash })}>
-          Revert Commit
+          <Codicon name="discard" style={ctxStyles.icon} />
+          <span>Revert Commit</span>
         </div>
+        {commit.unpushed && isHead && (
+          <>
+            <div style={ctxStyles.separator} />
+            <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_EDIT_COMMIT_MESSAGE', requestId: generateId(), repoId: commit.repoId, hash: commit.hash, currentMessage: commit.message })}>
+              <Codicon name="edit" style={ctxStyles.icon} />
+              <span>Edit Commit Message</span>
+            </div>
+            <div style={ctxStyles.item} onClick={() => send({ type: 'LOG_UNDO_COMMIT', requestId: generateId(), repoId: commit.repoId })}>
+              <Codicon name="arrow-left" style={ctxStyles.icon} />
+              <span>Undo Commit</span>
+            </div>
+          </>
+        )}
+        {commit.unpushed && (
+          <>
+            <div style={ctxStyles.separator} />
+            <div
+              style={{ ...ctxStyles.item, color: 'var(--vscode-errorForeground)' }}
+              onClick={() => send({ type: 'LOG_DROP_COMMIT', requestId: generateId(), repoId: commit.repoId, hash: commit.hash })}
+            >
+              <Codicon name="trash" style={ctxStyles.icon} />
+              <span>Drop Commit</span>
+            </div>
+          </>
+        )}
       </div>
     </>
   );
@@ -299,16 +459,37 @@ const ctxStyles = {
     border: '1px solid var(--vscode-menu-border)',
     borderRadius: '4px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
-    minWidth: '210px',
+    minWidth: '220px',
     padding: '4px 0',
     fontSize: '12px',
     userSelect: 'none' as const,
   }),
+  header: {
+    padding: '4px 12px',
+    fontSize: '11px',
+    opacity: 0.55,
+    color: 'var(--vscode-menu-foreground)',
+    whiteSpace: 'nowrap' as const,
+  } as React.CSSProperties,
   item: {
     padding: '4px 12px',
     cursor: 'pointer',
     color: 'var(--vscode-menu-foreground)',
     whiteSpace: 'nowrap' as const,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  } as React.CSSProperties,
+  itemDisabled: {
+    padding: '4px 12px',
+    cursor: 'default',
+    color: 'var(--vscode-menu-foreground)',
+    whiteSpace: 'nowrap' as const,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    opacity: 0.35,
+    pointerEvents: 'none' as const,
   } as React.CSSProperties,
   itemWithArrow: {
     padding: '4px 12px',
@@ -317,11 +498,15 @@ const ctxStyles = {
     whiteSpace: 'nowrap' as const,
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '12px',
+    gap: '8px',
     position: 'relative' as const,
   } as React.CSSProperties,
-  arrow: { fontSize: '9px', opacity: 0.6 } as React.CSSProperties,
+  icon: {
+    fontSize: '14px',
+    flexShrink: 0,
+    opacity: 0.8,
+  } as React.CSSProperties,
+  arrow: { fontSize: '9px', opacity: 0.6, marginLeft: 'auto' } as React.CSSProperties,
   submenu: {
     position: 'absolute' as const,
     left: '100%',
@@ -440,7 +625,7 @@ const styles = {
     textOverflow: 'ellipsis' as const,
     lineHeight: `${ROW_HEIGHT}px`,
   } as React.CSSProperties,
-  row: (top: number, selected: boolean): React.CSSProperties => ({
+  row: (top: number, selected: boolean, multiSelected = false): React.CSSProperties => ({
     position: 'absolute' as const,
     top,
     left: 0,
@@ -451,7 +636,11 @@ const styles = {
     gap: '4px',
     paddingRight: '8px',
     cursor: 'pointer',
-    background: selected ? 'var(--vscode-list-activeSelectionBackground)' : 'transparent',
+    background: selected
+      ? 'var(--vscode-list-activeSelectionBackground)'
+      : multiSelected
+      ? 'var(--vscode-list-inactiveSelectionBackground)'
+      : 'transparent',
     color: selected ? 'var(--vscode-list-activeSelectionForeground)' : 'var(--vscode-foreground)',
     fontSize: '12px',
     zIndex: 2,

@@ -72,6 +72,12 @@ export class GitLogPanelProvider implements vscode.WebviewViewProvider, vscode.D
     vscode.commands.executeCommand(`${GitLogPanelProvider.viewType}.focus`);
   }
 
+  /** Focus the panel and scroll to a specific commit. */
+  selectCommit(hash: string, repoId: string): void {
+    this.focus();
+    this.post({ type: 'LOG_SCROLL_TO_COMMIT', hash, repoId });
+  }
+
   private post(msg: HostToLogMsg): void {
     this.view?.webview.postMessage(msg);
   }
@@ -382,6 +388,16 @@ export class GitLogPanelProvider implements vscode.WebviewViewProvider, vscode.D
       case 'LOG_REVERT_COMMIT': {
         const repo = this.manager.getRepo(msg.repoId);
         if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        {
+          const confirm = await vscode.window.showWarningMessage(
+            `Revert commit ${msg.hash.slice(0, 7)}? This creates a new commit that undoes the changes.`,
+            { modal: true }, 'Revert'
+          );
+          if (confirm !== 'Revert') {
+            this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+            return;
+          }
+        }
         try {
           await repo.revertCommit(msg.hash);
           this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
@@ -445,6 +461,344 @@ export class GitLogPanelProvider implements vscode.WebviewViewProvider, vscode.D
           this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
           vscode.window.showErrorMessage(`GitStorm: Create patch failed: ${String(e)}`);
         }
+        break;
+      }
+
+      case 'LOG_CHERRY_PICK_MULTI': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        try {
+          await repo.cherryPickMulti(msg.hashes);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          const errMsg = String(e);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: errMsg });
+          if (errMsg.includes('CONFLICT') || errMsg.includes('could not apply')) {
+            const choice = await vscode.window.showWarningMessage(
+              'Cherry-pick has conflicts. Resolve them, then choose an action.',
+              'Continue', 'Skip', 'Abort'
+            );
+            if (choice === 'Continue') await repo.cherryPickContinue();
+            else if (choice === 'Skip') await repo.cherryPickSkip();
+            else await repo.cherryPickAbort();
+          } else {
+            vscode.window.showErrorMessage(`GitStorm: Cherry-pick failed: ${errMsg}`);
+          }
+        }
+        break;
+      }
+
+      case 'LOG_REVERT_COMMITS': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        {
+          const confirm = await vscode.window.showWarningMessage(
+            `Revert ${msg.hashes.length} commits? This creates new commits that undo the changes.`,
+            { modal: true }, 'Revert'
+          );
+          if (confirm !== 'Revert') {
+            this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+            return;
+          }
+        }
+        try {
+          await repo.revertCommits(msg.hashes);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          const errMsg = String(e);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: errMsg });
+          if (errMsg.includes('CONFLICT') || errMsg.includes('could not revert')) {
+            const choice = await vscode.window.showWarningMessage(
+              'Revert has conflicts. Resolve them, then choose an action.',
+              'Continue', 'Abort'
+            );
+            if (choice === 'Continue') await repo.revertContinue();
+            else await repo.revertAbort();
+          } else {
+            vscode.window.showErrorMessage(`GitStorm: Revert failed: ${errMsg}`);
+          }
+        }
+        break;
+      }
+
+      case 'LOG_DROP_COMMITS': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        const confirm = await vscode.window.showWarningMessage(
+          `Drop ${msg.hashes.length} commits? This rewrites history and cannot be undone.`,
+          { modal: true }, 'Drop'
+        );
+        if (confirm !== 'Drop') {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+          return;
+        }
+        try {
+          await repo.dropCommits(msg.oldestHash);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Drop commits failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_CREATE_PATCH_MULTI': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        try {
+          const folderUris = await vscode.window.showOpenDialog({
+            canSelectFiles: false,
+            canSelectFolders: true,
+            canSelectMany: false,
+            openLabel: 'Save patches here',
+          });
+          if (!folderUris || folderUris.length === 0) {
+            this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+            return;
+          }
+          const folderPath = folderUris[0].fsPath;
+          const path = await import('path');
+          for (const hash of msg.hashes) {
+            const patch = await repo.createPatch(hash);
+            const filePath = path.join(folderPath, `${hash.slice(0, 7)}.patch`);
+            await vscode.workspace.fs.writeFile(vscode.Uri.file(filePath), Buffer.from(patch, 'utf8'));
+          }
+          vscode.window.showInformationMessage(`${msg.hashes.length} patches saved to ${folderPath}`);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Create patches failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_DROP_COMMIT': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        const confirm = await vscode.window.showWarningMessage(
+          `Drop commit ${msg.hash.slice(0, 7)}? This rewrites history. Only drop unpushed commits — dropping a pushed commit will require a force push.`,
+          { modal: true }, 'Drop'
+        );
+        if (confirm !== 'Drop') {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+          return;
+        }
+        try {
+          await repo.dropCommit(msg.hash);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Drop commit failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_SQUASH_COMMITS': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        // Open untitled editor for multi-line commit message editing
+        const uri = vscode.Uri.parse('untitled:Squash Commit Message');
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const wsEdit = new vscode.WorkspaceEdit();
+        wsEdit.insert(uri, new vscode.Position(0, 0), msg.message);
+        await vscode.workspace.applyEdit(wsEdit);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        // Show persistent status bar buttons (unlike showInformationMessage which auto-dismisses)
+        const uid = Date.now().toString(36);
+        const confirmCmdId = `gitstorm._squashConfirm_${uid}`;
+        const cancelCmdId = `gitstorm._squashCancel_${uid}`;
+        const choice = await new Promise<'confirm' | 'cancel'>(resolve => {
+          const disposables: vscode.Disposable[] = [];
+          let settled = false;
+          const settle = (v: 'confirm' | 'cancel') => {
+            if (settled) return;
+            settled = true;
+            disposables.forEach(d => d.dispose());
+            resolve(v);
+          };
+          disposables.push(
+            vscode.commands.registerCommand(confirmCmdId, () => settle('confirm')),
+            vscode.commands.registerCommand(cancelCmdId, () => settle('cancel')),
+          );
+          const confirmItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10000);
+          confirmItem.text = '$(check) Confirm Squash';
+          confirmItem.command = confirmCmdId;
+          confirmItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+          confirmItem.tooltip = `Confirm squash of ${msg.hashes.length} commits`;
+          confirmItem.show();
+          disposables.push(confirmItem);
+          const cancelItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 9999);
+          cancelItem.text = '$(close) Cancel';
+          cancelItem.command = cancelCmdId;
+          cancelItem.tooltip = 'Cancel squash';
+          cancelItem.show();
+          disposables.push(cancelItem);
+          // Auto-cancel if the user closes the editor tab without using the buttons
+          disposables.push(
+            vscode.workspace.onDidCloseTextDocument(closed => {
+              if (closed.uri.toString() === uri.toString()) settle('cancel');
+            })
+          );
+        });
+        const finalMessage = doc.getText().trim();
+        // Close the editor (revert so VSCode doesn't ask to save the untitled file)
+        await vscode.window.showTextDocument(doc);
+        await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+        if (choice !== 'confirm' || !finalMessage) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+          return;
+        }
+        try {
+          await repo.squashCommits(msg.oldestHash, finalMessage);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Squash failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_UNDO_COMMIT': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        const confirm = await vscode.window.showWarningMessage(
+          'Undo last commit? Changes will be moved back to the staged area.',
+          { modal: true }, 'Undo Commit'
+        );
+        if (confirm !== 'Undo Commit') {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+          return;
+        }
+        try {
+          await repo.undoCommit();
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Undo commit failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_EDIT_COMMIT_MESSAGE': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        const uri = vscode.Uri.parse('untitled:Edit Commit Message');
+        const doc = await vscode.workspace.openTextDocument(uri);
+        const wsEdit = new vscode.WorkspaceEdit();
+        wsEdit.insert(uri, new vscode.Position(0, 0), msg.currentMessage);
+        await vscode.workspace.applyEdit(wsEdit);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        const uid = Date.now().toString(36);
+        const confirmCmdId = `gitstorm._editMsgConfirm_${uid}`;
+        const cancelCmdId = `gitstorm._editMsgCancel_${uid}`;
+        const choice = await new Promise<'confirm' | 'cancel'>(resolve => {
+          const disposables: vscode.Disposable[] = [];
+          let settled = false;
+          const settle = (v: 'confirm' | 'cancel') => {
+            if (settled) return;
+            settled = true;
+            disposables.forEach(d => d.dispose());
+            resolve(v);
+          };
+          disposables.push(
+            vscode.commands.registerCommand(confirmCmdId, () => settle('confirm')),
+            vscode.commands.registerCommand(cancelCmdId, () => settle('cancel')),
+          );
+          const confirmItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10000);
+          confirmItem.text = '$(check) Confirm Edit';
+          confirmItem.command = confirmCmdId;
+          confirmItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+          confirmItem.tooltip = 'Confirm commit message edit';
+          confirmItem.show();
+          disposables.push(confirmItem);
+          const cancelItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 9999);
+          cancelItem.text = '$(close) Cancel';
+          cancelItem.command = cancelCmdId;
+          cancelItem.tooltip = 'Cancel commit message edit';
+          cancelItem.show();
+          disposables.push(cancelItem);
+          disposables.push(
+            vscode.workspace.onDidCloseTextDocument(closed => {
+              if (closed.uri.toString() === uri.toString()) settle('cancel');
+            })
+          );
+        });
+        const finalMessage = doc.getText().trim();
+        await vscode.window.showTextDocument(doc);
+        await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+        if (choice !== 'confirm' || !finalMessage) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+          return;
+        }
+        try {
+          await repo.editCommitMessage(finalMessage);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Edit commit message failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_NEW_BRANCH_FROM_COMMIT': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        const branchName = await vscode.window.showInputBox({
+          prompt: `Create new branch from ${msg.hash.slice(0, 7)}`,
+          placeHolder: 'my-feature-branch',
+          validateInput: v => v.trim() ? undefined : 'Branch name cannot be empty',
+        });
+        if (!branchName) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+          return;
+        }
+        try {
+          await repo.createBranchFromCommit(branchName.trim(), msg.hash);
+          const branches = await repo.getBranches();
+          this.post({ type: 'LOG_REFS_UPDATE', repoId: msg.repoId, branches });
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Create branch failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_CREATE_TAG': {
+        const repo = this.manager.getRepo(msg.repoId);
+        if (!repo) { this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
+        const tagName = await vscode.window.showInputBox({
+          prompt: `Tag name for commit ${msg.hash.slice(0, 7)}`,
+          placeHolder: 'v1.0.0',
+          validateInput: v => v.trim() ? undefined : 'Tag name cannot be empty',
+        });
+        if (!tagName) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Cancelled' });
+          return;
+        }
+        try {
+          await repo.createTag(tagName.trim(), msg.hash);
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: true });
+          this.post({ type: 'LOG_REFRESH' });
+        } catch (e: unknown) {
+          this.post({ type: 'LOG_BRANCH_OP_RESULT', requestId: msg.requestId, ok: false, error: String(e) });
+          vscode.window.showErrorMessage(`GitStorm: Create tag failed: ${String(e)}`);
+        }
+        break;
+      }
+
+      case 'LOG_REQUEST_COMMIT_BRANCHES': {
+        const repo = this.manager.getRepo(msg.repoId);
+        const branches = repo ? await repo.getBranchesContaining(msg.hash).catch(() => []) : [];
+        this.post({ type: 'LOG_COMMIT_BRANCHES_RESULT', requestId: msg.requestId, branches });
         break;
       }
     }

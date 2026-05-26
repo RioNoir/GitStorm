@@ -85,7 +85,7 @@ export const BranchSidebar = forwardRef<HTMLDivElement, Props>(function BranchSi
     : branches;
 
   const localMerged = sortMerged(buildMergedBranches(filtered.filter(b => !b.isRemote)));
-  const remoteMerged = sortMerged(buildMergedBranches(filtered.filter(b => b.isRemote)));
+  const remoteMerged = sortMerged(buildMergedBranches(filtered.filter(b => b.isRemote && stripRemotePrefix(b.name) !== 'HEAD')));
 
   function closePushMenu() { setPushMenu(null); }
 
@@ -109,7 +109,7 @@ export const BranchSidebar = forwardRef<HTMLDivElement, Props>(function BranchSi
           />
         </div>
 
-        {repos.length > 0 && (
+        {repos.length > 1 && (
           <div style={styles.repoList}>
             {repos.map(repo => (
               <div key={repo.id} style={styles.repoRow}>

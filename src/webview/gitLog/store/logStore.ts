@@ -29,6 +29,8 @@ interface LogState {
   branchFilter: string;
   commitFilters: CommitFilters;
   error: string | null;
+  pendingScrollHash: string | null;
+  fileLoadSeq: number;
 
   setRepos: (repos: RepoMeta[]) => void;
   setBranches: (branches: BranchInfo[]) => void;
@@ -47,6 +49,7 @@ interface LogState {
   setCommitFilters: (filters: Partial<CommitFilters>) => void;
   updateBranches: (repoId: string, branches: BranchInfo[]) => void;
   setError: (err: string | null) => void;
+  setPendingScrollHash: (hash: string | null) => void;
 }
 
 const defaultCommitFilters: CommitFilters = {
@@ -76,6 +79,8 @@ export const useLogStore = create<LogState>((set, get) => ({
   branchFilter: '',
   commitFilters: { ...defaultCommitFilters },
   error: null,
+  pendingScrollHash: null,
+  fileLoadSeq: 0,
 
   setRepos: (repos) => set({ repos }),
   setBranches: (branches) => set({ branches }),
@@ -86,7 +91,7 @@ export const useLogStore = create<LogState>((set, get) => ({
     hasMore: !isLast,
   })),
   resetCommits: () => set({ commits: [], hasMore: true, selectedCommit: null, commitFiles: [], currentDiff: null }),
-  selectCommit: (commit) => set({ selectedCommit: commit, commitFiles: [], currentDiff: null, selectedFile: null }),
+  selectCommit: (commit) => set(s => ({ selectedCommit: commit, commitFiles: [], currentDiff: null, selectedFile: null, fileLoadSeq: s.fileLoadSeq + 1 })),
   setCommitFiles: (files) => set({ commitFiles: files, loadingFiles: false }),
   selectFile: (file) => set({ selectedFile: file }),
   setDiff: (diff) => set({ currentDiff: diff, loadingDiff: false }),
@@ -100,4 +105,5 @@ export const useLogStore = create<LogState>((set, get) => ({
     branches: [...s.branches.filter(b => b.repoId !== repoId), ...branches],
   })),
   setError: (err) => set({ error: err }),
+  setPendingScrollHash: (hash) => set({ pendingScrollHash: hash }),
 }));

@@ -95,6 +95,9 @@ function App() {
             console.error('Branch operation failed:', msg.error);
           }
           break;
+        case 'LOG_SCROLL_TO_COMMIT':
+          store.setPendingScrollHash(msg.hash);
+          break;
         case 'LOG_REMOTES_RESULT':
           break;
       }
@@ -169,7 +172,7 @@ function App() {
       repoId: selectedCommit.repoId,
       hash: selectedCommit.hash,
     } satisfies LogToHostMsg);
-  }, [store.selectedCommit?.hash]);
+  }, [store.fileLoadSeq]);
 
   const repoColors = useMemo(() => {
     const map: Record<string, string> = {};
@@ -287,6 +290,8 @@ function App() {
           onLoadMore={handleLoadMore}
           hasMore={store.hasMore && !store.loadingCommits}
           loading={store.loadingCommits}
+          scrollToHash={store.pendingScrollHash}
+          onScrolledToHash={() => store.setPendingScrollHash(null)}
         />
 
         {hasSelectedCommit && <ResizeHandle onMouseDown={onDetailResize} />}

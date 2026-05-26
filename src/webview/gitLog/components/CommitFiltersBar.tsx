@@ -76,7 +76,7 @@ export function CommitFiltersBar({ filters, branches, repos, onFilterChange, onR
       <div style={{ flex: 1 }} />
       <button style={styles.fetchBtn} onClick={onFetchAll} title="Fetch all remotes and refresh log">
         <Codicon name="sync" style={{ fontSize: '13px' }} />
-        <span>Update</span>
+        <span>Refresh</span>
       </button>
     </div>
   );
