@@ -116,11 +116,15 @@ export function CommitList({ commits, selectedHash, repoColors, repos, onSelect,
   useEffect(() => {
     if (!scrollToHash) return;
     const idx = commits.findIndex(c => c.hash === scrollToHash);
-    if (idx < 0) return;
-    virtualizer.scrollToIndex(idx, { align: 'center' });
-    onSelect(commits[idx]);
-    onScrolledToHash?.();
-  }, [scrollToHash, commits]);
+    if (idx >= 0) {
+      virtualizer.scrollToIndex(idx, { align: 'center' });
+      onSelect(commits[idx]);
+      onScrolledToHash?.();
+      return;
+    }
+    // Commit not yet in the loaded list — keep fetching batches until found or exhausted
+    if (hasMore && !loading) onLoadMore();
+  }, [scrollToHash, commits, hasMore, loading]);
 
   const anyExpanded = expandedRepos.size > 0;
   const labelColWidth = multiRepo ? (anyExpanded ? REPO_LABEL_WIDTH_EXPANDED : REPO_LABEL_WIDTH + 2) : 0;

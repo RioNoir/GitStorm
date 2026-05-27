@@ -159,6 +159,19 @@ export class WorkspaceGitManager implements vscode.Disposable {
     return this.repos.get(repoId);
   }
 
+  getServiceForFile(filePath: string): { repoId: string; rootPath: string } | undefined {
+    let best: { repoId: string; rootPath: string } | undefined;
+    for (const [repoId, meta] of this.repoMetas) {
+      const prefix = meta.rootPath + path.sep;
+      if (filePath.startsWith(prefix) || filePath === meta.rootPath) {
+        if (!best || meta.rootPath.length > best.rootPath.length) {
+          best = { repoId, rootPath: meta.rootPath };
+        }
+      }
+    }
+    return best;
+  }
+
   async getAllStatuses(): Promise<WorkspaceStatus> {
     const results = await Promise.allSettled(
       Array.from(this.repos.values()).map(r => r.getStatus())

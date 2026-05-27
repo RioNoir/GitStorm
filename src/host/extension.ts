@@ -7,6 +7,7 @@ import { BranchStatusBar } from './ui/BranchStatusBar';
 import { BadgeController } from './ui/BadgeController';
 import { registerCommands } from './commands/registerCommands';
 import { ShelveDocumentProvider } from './utils/ShelveDocumentProvider';
+import { FileAnnotationController } from './ui/FileAnnotationController';
 
 export function activate(context: vscode.ExtensionContext): void {
   const manager = new WorkspaceGitManager(context);
@@ -30,6 +31,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.executeCommand('gitstorm.commitPanel.focus');
   });
 
+  const annotationController = new FileAnnotationController(manager, logPanel);
+
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(CommitPanelProvider.viewType, commitPanel, {
       webviewOptions: { retainContextWhenHidden: true },
@@ -41,10 +44,11 @@ export function activate(context: vscode.ExtensionContext): void {
     badge,
     logPanel,
     mergeEditor,
-    branchStatusBar
+    branchStatusBar,
+    annotationController,
   );
 
-  registerCommands(context, commitPanel, logPanel, mergeEditor, branchStatusBar);
+  registerCommands(context, commitPanel, logPanel, mergeEditor, branchStatusBar, annotationController);
 }
 
 export function deactivate(): void {}

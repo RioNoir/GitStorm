@@ -3,13 +3,15 @@ import { CommitPanelProvider } from '../panels/CommitPanelProvider';
 import { GitLogPanelProvider } from '../panels/GitLogPanelProvider';
 import { MergeEditorProvider } from '../panels/MergeEditorProvider';
 import { BranchStatusBar } from '../ui/BranchStatusBar';
+import { FileAnnotationController } from '../ui/FileAnnotationController';
 
 export function registerCommands(
   context: vscode.ExtensionContext,
   commitPanel: CommitPanelProvider,
   logPanel: GitLogPanelProvider,
   mergeEditor: MergeEditorProvider,
-  branchStatusBar: BranchStatusBar
+  branchStatusBar: BranchStatusBar,
+  annotationController: FileAnnotationController,
 ): void {
   context.subscriptions.push(
     // Focus the Git Log panel in the bottom bar
@@ -42,7 +44,21 @@ export function registerCommands(
 
     vscode.commands.registerCommand('gitstorm.openSettings', () => {
       vscode.commands.executeCommand('workbench.action.openSettings', '@ext:rionoir.gitstorm');
-    })
+    }),
+
+    vscode.commands.registerCommand('gitstorm.openGitAnnotations', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor) await annotationController.openAnnotations(editor);
+    }),
+
+    vscode.commands.registerCommand('gitstorm.closeGitAnnotations', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (editor) annotationController.closeAnnotations(editor);
+    }),
+
+    vscode.commands.registerCommand('gitstorm.navigateToAnnotationCommit', (hash: string, repoId: string) => {
+      annotationController.navigateToCommit(hash, repoId);
+    }),
   );
 
   // Track files with conflict markers so we know when they've been resolved

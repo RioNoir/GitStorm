@@ -2,7 +2,7 @@
   "name": "gitstorm",
   "displayName": "GitStorm",
   "description": "IntelliJ/PhpStorm-style Git management for VS Code — Commit panel, Git Log with graph, and 3-way merge editor",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "rionoir",
   "license": "MIT",
   "repository": {
@@ -102,7 +102,7 @@
       },
       {
         "command": "gitstorm.openMergeEditor",
-        "title": "GitStorm: Open Merge Editor"
+        "title": "Open Merge Editor"
       },
       {
         "command": "gitstorm.refreshCommitPanel",
@@ -123,6 +123,20 @@
         "command": "gitstorm.openSettings",
         "title": "GitStorm: Settings",
         "icon": "$(settings-gear)"
+      },
+      {
+        "command": "gitstorm.openGitAnnotations",
+        "title": "Open Git Annotations",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "gitstorm.closeGitAnnotations",
+        "title": "Close Git Annotations",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "gitstorm.navigateToAnnotationCommit",
+        "title": "GitStorm: Navigate to Commit"
       }
     ],
     "menus": {
@@ -162,6 +176,30 @@
         },
         {
           "command": "gitstorm.openMergeEditor"
+        },
+        {
+          "command": "gitstorm.openGitAnnotations",
+          "when": "resourceScheme == file && config.gitstorm.gitAnnotations.enabled"
+        },
+        {
+          "command": "gitstorm.closeGitAnnotations",
+          "when": "resourceScheme == file && gitstorm.annotationsVisible"
+        },
+        {
+          "command": "gitstorm.navigateToAnnotationCommit",
+          "when": "false"
+        }
+      ],
+      "editor/lineNumber/context": [
+        {
+          "command": "gitstorm.openGitAnnotations",
+          "when": "resourceScheme == file && config.gitstorm.gitAnnotations.enabled && !gitstorm.annotationsVisible",
+          "group": "gitstorm@1"
+        },
+        {
+          "command": "gitstorm.closeGitAnnotations",
+          "when": "resourceScheme == file && gitstorm.annotationsVisible",
+          "group": "gitstorm@1"
         }
       ],
       "editor/context": [
@@ -169,6 +207,16 @@
           "command": "gitstorm.openMergeEditor",
           "when": "resourceScheme == file",
           "group": "gitstorm"
+        },
+        {
+          "command": "gitstorm.openGitAnnotations",
+          "when": "resourceScheme == file && config.gitstorm.gitAnnotations.enabled && !gitstorm.annotationsVisible",
+          "group": "gitstorm@1"
+        },
+        {
+          "command": "gitstorm.closeGitAnnotations",
+          "when": "resourceScheme == file && gitstorm.annotationsVisible",
+          "group": "gitstorm@1"
         }
       ]
     },
@@ -241,6 +289,16 @@
           "default": 0,
           "minimum": 0,
           "description": "Auto-refresh interval in seconds (0 = disabled, use file watchers only)"
+        },
+        "gitstorm.gitAnnotations.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Git Annotations in the editor."
+        },
+        "gitstorm.gitGhostText.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable inline Git ghost text in the editor."
         }
       }
     }
