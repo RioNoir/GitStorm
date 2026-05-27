@@ -10,6 +10,7 @@ import type { WorkspaceStatus } from '../types/git';
  */
 export class BadgeController implements vscode.Disposable {
   private readonly treeView: vscode.TreeView<never>;
+  private progressResolve: (() => void) | undefined;
 
   constructor() {
     const emptyProvider: vscode.TreeDataProvider<never> = {
@@ -21,7 +22,22 @@ export class BadgeController implements vscode.Disposable {
     });
   }
 
+  /** Show a spinner in the status bar while the initial git status is loading. */
+  startLoading(): void {
+    if (this.progressResolve) return;
+    vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'GitStorm: loading…' },
+      () => new Promise<void>(resolve => { this.progressResolve = resolve; })
+    );
+  }
+
+  stopLoading(): void {
+    this.progressResolve?.();
+    this.progressResolve = undefined;
+  }
+
   update(status: WorkspaceStatus): void {
+    this.stopLoading();
     const total = status.repos.reduce(
       (sum, r) => sum + r.stagedFiles.length + r.unstagedFiles.length, 0
     );
@@ -31,6 +47,7 @@ export class BadgeController implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.stopLoading();
     this.treeView.dispose();
   }
 }

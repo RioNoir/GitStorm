@@ -113,10 +113,10 @@ export function ProjectGroup({
           <span
             style={styles.branchBadge(branchClr)}
             onClick={(e) => { e.stopPropagation(); onBranchClick(repoId); }}
-            title="Switch branch"
+            title={repoStatus.branch.name}
           >
-            <Codicon name="git-branch" style={{ fontSize: '10px', marginRight: '3px', opacity: 0.8 }} />
-            {repoStatus.branch.name}
+            <Codicon name="git-branch" style={{ fontSize: '10px', flexShrink: 0, opacity: 0.8 }} />
+            <span style={styles.branchName}>{repoStatus.branch.name}</span>
           </span>
           {totalFiles > 0 && (
             <div style={styles.rightGroup}>
@@ -218,6 +218,7 @@ const styles = {
   branchBadge: (clr: { bg: string; fg: string; border: string }): React.CSSProperties => ({
     display: 'inline-flex',
     alignItems: 'center',
+    gap: '3px',
     fontSize: '10px',
     fontWeight: 'normal' as const,
     textTransform: 'none' as const,
@@ -227,14 +228,19 @@ const styles = {
     border: `1px solid ${clr.border}`,
     borderRadius: '3px',
     padding: '1px 5px',
+    flexShrink: 1,
+    minWidth: '0',
+    maxWidth: '160px',
+    marginLeft: '4px',
+    cursor: 'pointer',
+    overflow: 'hidden',
+  }),
+  branchName: {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
-    flexShrink: 1,
-    minWidth: '0',
-    marginLeft: '4px',
-    cursor: 'pointer',
-  }),
+    minWidth: 0,
+  } as React.CSSProperties,
   rightGroup: {
     display: 'flex',
     alignItems: 'center',

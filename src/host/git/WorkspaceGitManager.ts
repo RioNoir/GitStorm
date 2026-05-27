@@ -41,6 +41,21 @@ export class WorkspaceGitManager implements vscode.Disposable {
     );
 
     this.reinitialize();
+
+    // If vscode.git is not yet initialized at startup, re-run setup once it is.
+    // This ensures watchers use the VS Code git API rather than the filesystem fallback,
+    // and that the initial status is fetched after git repos are fully loaded.
+    const gitApi = getVscodeGitApi();
+    if (gitApi && gitApi.state === 'uninitialized') {
+      const d = gitApi.onDidChangeState((state) => {
+        if (state === 'initialized') {
+          d.dispose();
+          this.reinitialize();
+          this.scheduleRefresh();
+        }
+      });
+      this.globalListeners.push(d);
+    }
   }
 
   private reinitialize(): void {

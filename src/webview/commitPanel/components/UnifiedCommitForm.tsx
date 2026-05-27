@@ -106,7 +106,7 @@ function DropItem({ icon, label, itemStyle, onSelect }: { icon: string; label: s
 export function UnifiedCommitForm({
   message, repoStatuses, repoMetas, amendFlags,
   loading, getSelectedFilesForRepo, onMessageChange, onAmendToggle, onCommit, onCommitAndPush, onShelve, onStash,
-  onPush, onPushAll, onAutopilot, generatingMessage,
+  onAutopilot, generatingMessage,
 }: Props) {
   const metaMap = new Map(repoMetas.map(m => [m.id, m]));
 
@@ -118,10 +118,6 @@ export function UnifiedCommitForm({
 
   const canCommit = message.trim().length > 0 && commitTargets.length > 0 && !loading;
   const multiRepo = repoStatuses.length > 1;
-
-  // Repos with unpushed commits (ahead > 0)
-  const pushableRepos = repoStatuses.filter(r => (r.branch.aheadBehind?.ahead ?? 0) > 0);
-  const canPushAll = pushableRepos.length > 0 && !loading;
 
   const commitLabel = 'Commit';
   const pushLabel = 'Commit & Push';
@@ -269,65 +265,6 @@ export function UnifiedCommitForm({
           </button>
         </div>
       </div>
-      {/* Push section — shown when any repo has unpushed commits */}
-      {pushableRepos.length > 0 && (
-        <div style={styles.pushSection}>
-          <div style={styles.pushLabel}>
-            <Codicon name="cloud-upload" style={{ fontSize: '12px', opacity: 0.7 }} />
-            <span>Unpushed commits</span>
-          </div>
-          <div style={styles.pushRepos}>
-            {multiRepo ? (
-              <>
-                {pushableRepos.map(r => {
-                  const meta = metaMap.get(r.repoId);
-                  const ahead = r.branch.aheadBehind?.ahead ?? 0;
-                  return (
-                    <div key={r.repoId} style={styles.pushRow}>
-                      <span style={styles.pushDot(meta?.color ?? '#888')} />
-                      <span style={styles.pushRepoName}>{meta?.name ?? r.repoId.split('/').pop()}</span>
-                      <span style={styles.pushAhead}>↑{ahead}</span>
-                      <button
-                        style={styles.pushBtn(true)}
-                        onClick={() => onPush(r.repoId)}
-                        disabled={loading}
-                        title={`Push ${meta?.name}`}
-                      >
-                        Push
-                      </button>
-                    </div>
-                  );
-                })}
-                {pushableRepos.length > 1 && (
-                  <div style={styles.pushRow}>
-                    <button
-                      style={{ ...styles.pushBtn(canPushAll), flex: 1 }}
-                      onClick={onPushAll}
-                      disabled={!canPushAll}
-                      title="Push all repositories to remote"
-                    >
-                      Push All
-                    </button>
-                  </div>
-                )}
-              </>
-            ) : (
-              <div style={styles.pushRow}>
-                <span style={styles.pushAhead}>↑{pushableRepos[0].branch.aheadBehind?.ahead ?? 0} commit{(pushableRepos[0].branch.aheadBehind?.ahead ?? 0) !== 1 ? 's' : ''}</span>
-                <button
-                  style={styles.pushBtn(canPushAll)}
-                  onClick={() => onPush(pushableRepos[0].repoId)}
-                  disabled={!canPushAll}
-                  title="Push commits to remote"
-                >
-                  <Codicon name="cloud-upload" style={{ marginRight: '4px', fontSize: '11px' }} />
-                  Push
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
     </div>
   );
@@ -470,63 +407,5 @@ const styles = {
     fontSize: '12px',
     opacity: enabled ? 1 : 0.5,
     fontWeight: 'bold',
-  }),
-  pushSection: {
-    borderTop: '1px solid var(--vscode-panel-border)',
-    paddingTop: '6px',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '4px',
-  },
-  pushLabel: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '5px',
-    fontSize: '11px',
-    opacity: 0.6,
-    userSelect: 'none' as const,
-  },
-  pushRepos: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: '3px',
-  },
-  pushRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  pushDot: (color: string): React.CSSProperties => ({
-    width: '7px',
-    height: '7px',
-    borderRadius: '50%',
-    background: color,
-    flexShrink: 0,
-  }),
-  pushRepoName: {
-    flex: 1,
-    fontSize: '12px',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap' as const,
-  },
-  pushAhead: {
-    fontSize: '11px',
-    opacity: 0.65,
-    flexShrink: 0,
-    fontFamily: 'monospace',
-  },
-  pushBtn: (enabled: boolean): React.CSSProperties => ({
-    padding: '2px 10px',
-    background: 'var(--vscode-button-background)',
-    color: 'var(--vscode-button-foreground)',
-    border: 'none',
-    borderRadius: '3px',
-    cursor: enabled ? 'pointer' : 'not-allowed',
-    fontSize: '11px',
-    opacity: enabled ? 1 : 0.5,
-    display: 'flex',
-    alignItems: 'center',
-    flexShrink: 0,
   }),
 };

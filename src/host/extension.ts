@@ -18,6 +18,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   const badge = new BadgeController();
+  badge.startLoading();
   manager.onStatusChange(status => badge.update(status));
   manager.getAllStatusesFresh().then(status => badge.update(status));
 
