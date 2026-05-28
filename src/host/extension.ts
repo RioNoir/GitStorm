@@ -8,6 +8,8 @@ import { BadgeController } from './ui/BadgeController';
 import { registerCommands } from './commands/registerCommands';
 import { ShelveDocumentProvider } from './utils/ShelveDocumentProvider';
 import { FileAnnotationController } from './ui/FileAnnotationController';
+import { GitProfileService } from './git/GitProfileService';
+import { ProfileStatusBar } from './ui/ProfileStatusBar';
 
 export function activate(context: vscode.ExtensionContext): void {
   const manager = new WorkspaceGitManager(context);
@@ -22,7 +24,10 @@ export function activate(context: vscode.ExtensionContext): void {
   manager.onStatusChange(status => badge.update(status));
   manager.getAllStatusesFresh().then(status => badge.update(status));
 
-  const commitPanel = new CommitPanelProvider(context.extensionUri, manager, context.globalStorageUri.fsPath, shelveDocProvider);
+  const profileService = new GitProfileService();
+  profileService.autoInitIfEmpty();
+
+  const commitPanel = new CommitPanelProvider(context.extensionUri, manager, context.globalStorageUri.fsPath, shelveDocProvider, profileService);
   const logPanel = new GitLogPanelProvider(context.extensionUri, manager);
   const mergeEditor = new MergeEditorProvider(context.extensionUri, manager);
   commitPanel.setMergeEditorProvider(mergeEditor);
@@ -31,6 +36,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const branchStatusBar = new BranchStatusBar(manager, () => {
     vscode.commands.executeCommand('gitstorm.commitPanel.focus');
   });
+
+  const profileStatusBar = new ProfileStatusBar(profileService);
 
   const annotationController = new FileAnnotationController(manager, logPanel);
 
@@ -46,10 +53,12 @@ export function activate(context: vscode.ExtensionContext): void {
     logPanel,
     mergeEditor,
     branchStatusBar,
+    profileStatusBar,
+    profileService,
     annotationController,
   );
 
-  registerCommands(context, commitPanel, logPanel, mergeEditor, branchStatusBar, annotationController);
+  registerCommands(context, commitPanel, logPanel, mergeEditor, branchStatusBar, annotationController, profileStatusBar);
 }
 
 export function deactivate(): void {}

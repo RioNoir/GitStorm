@@ -757,48 +757,48 @@ export class BranchStatusBar implements vscode.Disposable {
     type ActionItem = vscode.QuickPickItem & { action: () => Promise<void> };
     const items: ActionItem[] = [
       {
-        label: '$(archive) Accantona ed esegui checkout',
-        detail: 'Salva le modifiche nello stash, poi passa al branch',
+        label: '$(archive) Stash and checkout',
+        detail: 'Save changes to stash, then switch to the branch',
         action: async () => {
           await repo.stashPush(`WIP before checkout to ${branchName}`);
           await repo.checkout(branchName);
           vscode.window.showInformationMessage(
-            `GitStorm [${meta.name}]: modifiche accantonate, passato a "${branchName}"`
+            `GitStorm [${meta.name}]: changes stashed, switched to "${branchName}"`
           );
         },
       },
       {
-        label: '$(arrow-right) Esegui la migrazione delle modifiche',
-        detail: 'Porta le modifiche non committate nel nuovo branch',
+        label: '$(arrow-right) Bring changes to new branch',
+        detail: 'Carry uncommitted changes into the new branch',
         action: async () => {
           await repo.stashPush(`WIP migrating to ${branchName}`);
           await repo.checkout(branchName);
           await repo.stashPop();
           vscode.window.showInformationMessage(
-            `GitStorm [${meta.name}]: modifiche migrate su "${branchName}"`
+            `GitStorm [${meta.name}]: changes migrated to "${branchName}"`
           );
         },
       },
       {
-        label: '$(warning) Forza checkout',
-        detail: 'Scarta le modifiche locali e passa al branch',
+        label: '$(warning) Force checkout',
+        detail: 'Discard local changes and switch to the branch',
         action: async () => {
           await repo.checkoutForce(branchName);
           vscode.window.showInformationMessage(
-            `GitStorm [${meta.name}]: checkout forzato su "${branchName}" (modifiche scartate)`
+            `GitStorm [${meta.name}]: force checkout to "${branchName}" (changes discarded)`
           );
         },
       },
       {
-        label: '$(close) Annulla',
+        label: '$(close) Cancel',
         detail: '',
         action: async () => { /* no-op */ },
       },
     ];
 
     const pick = await vscode.window.showQuickPick(items, {
-      title: `GitStorm [${meta.name}]: modifiche non committate`,
-      placeHolder: `Scegli come gestire le modifiche prima di passare a "${branchName}"`,
+      title: `GitStorm [${meta.name}]: Uncommitted changes`,
+      placeHolder: `Choose how to handle local changes before switching to "${branchName}"`,
       ignoreFocusOut: true,
     });
 

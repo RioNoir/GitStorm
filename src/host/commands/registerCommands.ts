@@ -4,6 +4,7 @@ import { GitLogPanelProvider } from '../panels/GitLogPanelProvider';
 import { MergeEditorProvider } from '../panels/MergeEditorProvider';
 import { BranchStatusBar } from '../ui/BranchStatusBar';
 import { FileAnnotationController } from '../ui/FileAnnotationController';
+import { ProfileStatusBar } from '../ui/ProfileStatusBar';
 
 export function registerCommands(
   context: vscode.ExtensionContext,
@@ -12,6 +13,7 @@ export function registerCommands(
   mergeEditor: MergeEditorProvider,
   branchStatusBar: BranchStatusBar,
   annotationController: FileAnnotationController,
+  profileStatusBar: ProfileStatusBar,
 ): void {
   context.subscriptions.push(
     // Focus the Git Log panel in the bottom bar
@@ -58,6 +60,14 @@ export function registerCommands(
 
     vscode.commands.registerCommand('gitstorm.navigateToAnnotationCommit', (hash: string, repoId: string) => {
       annotationController.navigateToCommit(hash, repoId);
+    }),
+
+    vscode.commands.registerCommand('gitstorm.manageProfiles', () => {
+      profileStatusBar.showMenu();
+    }),
+
+    vscode.commands.registerCommand('gitstorm.switchProfile', () => {
+      profileStatusBar.switchProfile();
     }),
   );
 
