@@ -610,6 +610,40 @@ export class GitService {
     return result.map(r => r.name);
   }
 
+  async getRemotesWithUrls(): Promise<{ name: string; fetchUrl: string; pushUrl: string }[]> {
+    const vsRepo = this.vsRepo();
+    if (vsRepo) {
+      return vsRepo.state.remotes.map(r => ({
+        name: r.name,
+        fetchUrl: r.fetchUrl ?? '',
+        pushUrl: r.pushUrl ?? r.fetchUrl ?? '',
+      }));
+    }
+    const result = await this.git.getRemotes(true);
+    return result.map(r => ({
+      name: r.name,
+      fetchUrl: r.refs.fetch ?? '',
+      pushUrl: r.refs.push ?? r.refs.fetch ?? '',
+    }));
+  }
+
+  async addRemote(name: string, url: string): Promise<void> {
+    await this.git.addRemote(name, url);
+    this.vsRepo()?.repository.fetch?.();
+  }
+
+  async removeRemote(name: string): Promise<void> {
+    await this.git.removeRemote(name);
+  }
+
+  async renameRemote(oldName: string, newName: string): Promise<void> {
+    await this.git.remote(['rename', oldName, newName]);
+  }
+
+  async setRemoteUrl(name: string, url: string): Promise<void> {
+    await this.git.remote(['set-url', name, url]);
+  }
+
   async push(force = false, remote?: string): Promise<void> {
     const vsRepo = this.vsRepo();
     if (vsRepo) {

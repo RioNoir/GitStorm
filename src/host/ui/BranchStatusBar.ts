@@ -20,7 +20,7 @@ export class BranchStatusBar implements vscode.Disposable {
       100
     );
     this.statusBarItem.command = 'gitstorm.showBranchMenu';
-    this.statusBarItem.tooltip = 'GitStorm: Branch Menu';
+    this.statusBarItem.tooltip = 'GitStorm: Git Menu';
     this.statusBarItem.show();
 
     this.statusDisposable = this.manager.onStatusChange(() => this.refresh());
@@ -76,7 +76,7 @@ export class BranchStatusBar implements vscode.Disposable {
     if (this.hasBehind) tooltipParts.push('Incoming commits available');
     this.statusBarItem.tooltip = tooltipParts.length > 0
       ? `GitStorm: ${tooltipParts.join(' · ')}`
-      : 'GitStorm: Branch Menu';
+      : 'GitStorm: Git Menu';
 
     if (this.branchesDiverged) {
       this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
@@ -212,7 +212,7 @@ export class BranchStatusBar implements vscode.Disposable {
     }
 
     const pick = await vscode.window.showQuickPick(items, {
-      title: 'GitStorm — Branch Menu',
+      title: 'GitStorm — Git Menu',
       matchOnDescription: true,
     });
 
@@ -558,6 +558,11 @@ export class BranchStatusBar implements vscode.Disposable {
         description: `Create a new branch in ${meta.name}`,
         action: () => this.newBranchSingleRepo(meta),
       },
+      {
+        label: '$(remote-explorer) Manage Remotes…',
+        description: 'Add, remove, or edit remote repositories',
+        action: () => this.showRepoRemotesMenu(meta),
+      },
       { label: 'LOCAL', kind: vscode.QuickPickItemKind.Separator, action: async () => {} },
       ...local.map(b => {
         const primary = isPrimaryBranch(b.name);
@@ -757,48 +762,48 @@ export class BranchStatusBar implements vscode.Disposable {
     type ActionItem = vscode.QuickPickItem & { action: () => Promise<void> };
     const items: ActionItem[] = [
       {
-        label: '$(archive) Accantona ed esegui checkout',
-        detail: 'Salva le modifiche nello stash, poi passa al branch',
+        label: '$(archive) Stash and checkout',
+        detail: 'Save changes to stash, then switch to the branch',
         action: async () => {
           await repo.stashPush(`WIP before checkout to ${branchName}`);
           await repo.checkout(branchName);
           vscode.window.showInformationMessage(
-            `GitStorm [${meta.name}]: modifiche accantonate, passato a "${branchName}"`
+            `GitStorm [${meta.name}]: changes stashed, switched to "${branchName}"`
           );
         },
       },
       {
-        label: '$(arrow-right) Esegui la migrazione delle modifiche',
-        detail: 'Porta le modifiche non committate nel nuovo branch',
+        label: '$(arrow-right) Bring changes to new branch',
+        detail: 'Carry uncommitted changes into the new branch',
         action: async () => {
           await repo.stashPush(`WIP migrating to ${branchName}`);
           await repo.checkout(branchName);
           await repo.stashPop();
           vscode.window.showInformationMessage(
-            `GitStorm [${meta.name}]: modifiche migrate su "${branchName}"`
+            `GitStorm [${meta.name}]: changes migrated to "${branchName}"`
           );
         },
       },
       {
-        label: '$(warning) Forza checkout',
-        detail: 'Scarta le modifiche locali e passa al branch',
+        label: '$(warning) Force checkout',
+        detail: 'Discard local changes and switch to the branch',
         action: async () => {
           await repo.checkoutForce(branchName);
           vscode.window.showInformationMessage(
-            `GitStorm [${meta.name}]: checkout forzato su "${branchName}" (modifiche scartate)`
+            `GitStorm [${meta.name}]: force checkout to "${branchName}" (changes discarded)`
           );
         },
       },
       {
-        label: '$(close) Annulla',
+        label: '$(close) Cancel',
         detail: '',
         action: async () => { /* no-op */ },
       },
     ];
 
     const pick = await vscode.window.showQuickPick(items, {
-      title: `GitStorm [${meta.name}]: modifiche non committate`,
-      placeHolder: `Scegli come gestire le modifiche prima di passare a "${branchName}"`,
+      title: `GitStorm [${meta.name}]: Uncommitted changes`,
+      placeHolder: `Choose how to handle local changes before switching to "${branchName}"`,
       ignoreFocusOut: true,
     });
 
@@ -1204,6 +1209,208 @@ export class BranchStatusBar implements vscode.Disposable {
       }
     );
     await this.refresh();
+  }
+
+  // ── Remote management ────────────────────────────────────────────────────
+
+  private async showManageRemotesMenu(metas: RepoMeta[]): Promise<void> {
+    if (metas.length === 0) return;
+
+    let meta: RepoMeta;
+    if (metas.length === 1) {
+      meta = metas[0];
+    } else {
+      type RepoItem = vscode.QuickPickItem & { meta: RepoMeta };
+      const repoItems: RepoItem[] = metas.map(m => ({
+        label: `$(root-folder) ${m.name}`,
+        description: m.rootPath,
+        meta: m,
+      }));
+      const pick = await vscode.window.showQuickPick(repoItems, {
+        title: 'Manage Remotes — Select repository',
+      }) as RepoItem | undefined;
+      if (!pick) return;
+      meta = pick.meta;
+    }
+
+    await this.showRepoRemotesMenu(meta);
+  }
+
+  private async showRepoRemotesMenu(meta: RepoMeta): Promise<void> {
+    const repo = this.manager.getRepo(meta.id);
+    if (!repo) return;
+
+    const remotes = await repo.getRemotesWithUrls();
+
+    type RemoteItem = vscode.QuickPickItem & { action: () => Promise<void> | void };
+
+    const items: RemoteItem[] = [
+      {
+        label: '$(arrow-left) Back',
+        action: () => this.showRepoBranchMenu(meta),
+      },
+      { label: '', kind: vscode.QuickPickItemKind.Separator, action: async () => {} },
+      {
+        label: '$(add) Add Remote…',
+        description: 'Configure a new remote',
+        action: () => this.addRemote(meta),
+      },
+    ];
+
+    if (remotes.length > 0) {
+      items.push({ label: 'REMOTES', kind: vscode.QuickPickItemKind.Separator, action: async () => {} });
+      for (const remote of remotes) {
+        items.push({
+          label: `$(cloud) ${remote.name}`,
+          description: remote.fetchUrl,
+          action: () => this.showSingleRemoteMenu(remote, meta),
+        });
+      }
+    }
+
+    const pick = await vscode.window.showQuickPick(items, {
+      title: `${meta.name} — Remotes`,
+      matchOnDescription: true,
+    }) as RemoteItem | undefined;
+
+    if (pick) await pick.action();
+  }
+
+  private async showSingleRemoteMenu(
+    remote: { name: string; fetchUrl: string; pushUrl: string },
+    meta: RepoMeta
+  ): Promise<void> {
+    type ActionItem = vscode.QuickPickItem & { action: () => Promise<void> | void };
+
+    const items: ActionItem[] = [
+      {
+        label: '$(arrow-left) Back',
+        action: () => this.showRepoRemotesMenu(meta),
+      },
+      { label: '', kind: vscode.QuickPickItemKind.Separator, action: async () => {} },
+      {
+        label: '$(edit) Rename…',
+        description: `Rename "${remote.name}"`,
+        action: () => this.renameRemote(remote, meta),
+      },
+      {
+        label: '$(link) Change URL…',
+        description: remote.fetchUrl,
+        action: () => this.changeRemoteUrl(remote, meta),
+      },
+      { label: '', kind: vscode.QuickPickItemKind.Separator, action: async () => {} },
+      {
+        label: '$(trash) Remove',
+        description: `Remove remote "${remote.name}"`,
+        action: () => this.removeRemote(remote, meta),
+      },
+    ];
+
+    const pick = await vscode.window.showQuickPick(items, {
+      title: `Remote: ${remote.name} — ${meta.name}`,
+      matchOnDescription: true,
+    }) as ActionItem | undefined;
+
+    if (pick) await pick.action();
+  }
+
+  private async addRemote(meta: RepoMeta): Promise<void> {
+    const repo = this.manager.getRepo(meta.id);
+    if (!repo) return;
+
+    const name = await vscode.window.showInputBox({
+      title: `Add Remote in ${meta.name} — Name`,
+      prompt: 'Enter the remote name (e.g. origin, upstream)',
+      validateInput: v => (v.trim() ? undefined : 'Remote name cannot be empty'),
+    });
+    if (!name) return;
+
+    const url = await vscode.window.showInputBox({
+      title: `Add Remote in ${meta.name} — URL`,
+      prompt: 'Enter the remote URL',
+      validateInput: v => (v.trim() ? undefined : 'URL cannot be empty'),
+    });
+    if (!url) return;
+
+    try {
+      await repo.addRemote(name.trim(), url.trim());
+      vscode.window.showInformationMessage(`GitStorm [${meta.name}]: remote "${name}" added.`);
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(`GitStorm [${meta.name}]: ${String(e)}`);
+    }
+    await this.showRepoRemotesMenu(meta);
+  }
+
+  private async renameRemote(
+    remote: { name: string; fetchUrl: string; pushUrl: string },
+    meta: RepoMeta
+  ): Promise<void> {
+    const repo = this.manager.getRepo(meta.id);
+    if (!repo) return;
+
+    const newName = await vscode.window.showInputBox({
+      title: `Rename remote "${remote.name}" in ${meta.name}`,
+      value: remote.name,
+      validateInput: v => (v.trim() ? undefined : 'Remote name cannot be empty'),
+    });
+    if (!newName || newName === remote.name) return;
+
+    try {
+      await repo.renameRemote(remote.name, newName.trim());
+      vscode.window.showInformationMessage(`GitStorm [${meta.name}]: remote renamed "${remote.name}" → "${newName}".`);
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(`GitStorm [${meta.name}]: ${String(e)}`);
+    }
+    await this.showRepoRemotesMenu(meta);
+  }
+
+  private async changeRemoteUrl(
+    remote: { name: string; fetchUrl: string; pushUrl: string },
+    meta: RepoMeta
+  ): Promise<void> {
+    const repo = this.manager.getRepo(meta.id);
+    if (!repo) return;
+
+    const newUrl = await vscode.window.showInputBox({
+      title: `Change URL of "${remote.name}" in ${meta.name}`,
+      value: remote.fetchUrl,
+      validateInput: v => (v.trim() ? undefined : 'URL cannot be empty'),
+    });
+    if (!newUrl || newUrl === remote.fetchUrl) return;
+
+    try {
+      await repo.setRemoteUrl(remote.name, newUrl.trim());
+      vscode.window.showInformationMessage(`GitStorm [${meta.name}]: URL of "${remote.name}" updated.`);
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(`GitStorm [${meta.name}]: ${String(e)}`);
+    }
+    await this.showRepoRemotesMenu(meta);
+  }
+
+  private async removeRemote(
+    remote: { name: string; fetchUrl: string; pushUrl: string },
+    meta: RepoMeta
+  ): Promise<void> {
+    const repo = this.manager.getRepo(meta.id);
+    if (!repo) return;
+
+    const confirm = await vscode.window.showQuickPick(
+      [
+        { label: `$(trash) Remove "${remote.name}"`, value: true },
+        { label: '$(close) Cancel', value: false },
+      ],
+      { title: `Remove remote "${remote.name}" from ${meta.name}?` }
+    ) as { label: string; value: boolean } | undefined;
+
+    if (!confirm?.value) return;
+
+    try {
+      await repo.removeRemote(remote.name);
+      vscode.window.showInformationMessage(`GitStorm [${meta.name}]: remote "${remote.name}" removed.`);
+    } catch (e: unknown) {
+      vscode.window.showErrorMessage(`GitStorm [${meta.name}]: ${String(e)}`);
+    }
+    await this.showRepoRemotesMenu(meta);
   }
 
   dispose(): void {

@@ -13,6 +13,7 @@ export interface CommitState {
   iconTheme: IconThemeData | null;
   repoSelections: Record<string, boolean>;
   fileSelections: FileSelections;
+  seenFiles: Record<string, Set<string>>;
   // collapsed state for repo headers and tree dirs (key = repoId or dirPath)
   collapsedKeys: Set<string>;
   selectedFile: { repoId: string; path: string } | null;
@@ -66,6 +67,7 @@ export const useCommitStore = create<CommitState>((set, get) => ({
   iconTheme: null,
   repoSelections: {},
   fileSelections: {},
+  seenFiles: {},
   collapsedKeys: new Set(),
   selectedFile: null,
   currentDiff: null,
@@ -81,21 +83,30 @@ export const useCommitStore = create<CommitState>((set, get) => ({
   setStatus: (repoMetas, status, iconTheme) => {
     const prev = get().repoSelections;
     const prevFiles = get().fileSelections;
+    const prevSeen = get().seenFiles;
     const prevCollapsed = get().collapsedKeys;
     const repoSelections: Record<string, boolean> = {};
     const fileSelections: FileSelections = {};
+    const seenFiles: Record<string, Set<string>> = {};
     const collapsedKeys = new Set(prevCollapsed);
 
     for (const r of status.repos) {
       repoSelections[r.repoId] = prev[r.repoId] ?? true;
       const currentPaths = allFilePaths(r);
-      const prevSet = prevFiles[r.repoId];
+      const prevSelectedSet = prevFiles[r.repoId];
+      const prevSeenSet = prevSeen[r.repoId];
       const next = new Set<string>();
       for (const p of currentPaths) {
-        // New file (not seen before) → auto-select; existing → preserve previous state
-        if (!prevSet || prevSet.has(p)) next.add(p);
+        // File never seen before → auto-select.
+        // File was seen before → preserve user's explicit selection state.
+        if (!prevSeenSet || !prevSeenSet.has(p)) {
+          next.add(p);
+        } else if (prevSelectedSet?.has(p)) {
+          next.add(p);
+        }
       }
       fileSelections[r.repoId] = next;
+      seenFiles[r.repoId] = new Set(currentPaths);
 
       // Auto-collapse repos with no changes; auto-expand when changes appear
       if (!(r.repoId in prev)) {
@@ -108,7 +119,7 @@ export const useCommitStore = create<CommitState>((set, get) => ({
         }
       }
     }
-    set({ repoMetas, status, repoSelections, fileSelections, collapsedKeys, ...(iconTheme !== undefined ? { iconTheme } : {}) });
+    set({ repoMetas, status, repoSelections, fileSelections, seenFiles, collapsedKeys, ...(iconTheme !== undefined ? { iconTheme } : {}) });
   },
 
   setRepoSelection: (repoId, selected) =>

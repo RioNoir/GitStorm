@@ -2,7 +2,7 @@
   "name": "git-storm",
   "displayName": "GitStorm",
   "description": "IntelliJ/PhpStorm-style Git management for VS Code — Commit panel, Git Log with graph, and 3-way merge editor",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "publisher": "RioNoir",
   "license": "MIT",
   "repository": {
@@ -138,6 +138,16 @@
       {
         "command": "gitstorm.navigateToAnnotationCommit",
         "title": "GitStorm: Navigate to Commit"
+      },
+      {
+        "command": "gitstorm.manageProfiles",
+        "title": "GitStorm: Manage Git Profiles",
+        "icon": "$(account)"
+      },
+      {
+        "command": "gitstorm.switchProfile",
+        "title": "GitStorm: Switch Git Profile",
+        "icon": "$(account)"
       }
     ],
     "menus": {
@@ -300,6 +310,27 @@
           "type": "boolean",
           "default": true,
           "description": "Enable inline Git ghost text in the editor."
+        },
+        "gitstorm.gitProfiles": {
+          "type": "array",
+          "default": [],
+          "description": "Git identity profiles (name, email) managed by GitStorm.",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "gitName", "gitEmail"],
+            "properties": {
+              "id":        { "type": "string", "description": "Unique profile ID" },
+              "name":      { "type": "string", "description": "Display name for the profile (e.g. Work, Personal)" },
+              "gitName":   { "type": "string", "description": "git user.name" },
+              "gitEmail":  { "type": "string", "description": "git user.email" },
+              "isDefault": { "type": "boolean", "description": "Whether this is the default profile" }
+            }
+          }
+        },
+        "gitstorm.activeGitProfileId": {
+          "type": "string",
+          "default": "",
+          "description": "ID of the currently active Git profile for this workspace."
         }
       }
     }

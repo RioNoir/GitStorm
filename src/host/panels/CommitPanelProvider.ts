@@ -8,6 +8,7 @@ import { parseConflictFile } from '../git/ConflictParser';
 import { loadIconTheme } from '../utils/IconThemeService';
 import type { MergeEditorProvider } from './MergeEditorProvider';
 import type { GitLogPanelProvider } from './GitLogPanelProvider';
+import type { GitProfileService } from '../git/GitProfileService';
 
 export class CommitPanelProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'gitstorm.commitPanel';
@@ -20,6 +21,10 @@ export class CommitPanelProvider implements vscode.WebviewViewProvider {
 
   setLogProvider(provider: GitLogPanelProvider): void {
     this.logProvider = provider;
+  }
+
+  prefillCommitMessage(message: string): void {
+    this.post({ type: 'COMMIT_SET_MESSAGE', message });
   }
   private shelveServices = new Map<string, ShelveService>();
 
@@ -37,7 +42,8 @@ export class CommitPanelProvider implements vscode.WebviewViewProvider {
     private readonly manager: WorkspaceGitManager,
     private readonly globalStoragePath: string,
     private readonly shelveDocProvider: ShelveDocumentProvider,
-    private mergeEditorProvider?: MergeEditorProvider
+    private mergeEditorProvider?: MergeEditorProvider,
+    private readonly profileService?: GitProfileService
   ) {
     this.manager.onStatusChange((status) => {
       this.post({ type: 'COMMIT_STATUS_UPDATE', repos: this.manager.getRepoMetas(), status });
@@ -51,6 +57,12 @@ export class CommitPanelProvider implements vscode.WebviewViewProvider {
         this.post({ type: 'COMMIT_BRANCHES_UPDATE', repoId: meta.id, branches });
       }
     });
+  }
+
+  private async applyActiveProfile(repoPath: string): Promise<void> {
+    if (this.profileService) {
+      await this.profileService.applyToRepo(repoPath);
+    }
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -194,6 +206,7 @@ export class CommitPanelProvider implements vscode.WebviewViewProvider {
         const repo = this.manager.getRepo(msg.repoId);
         if (!repo) { this.post({ type: 'COMMIT_OP_RESULT', requestId: msg.requestId, ok: false, error: 'Repo not found' }); return; }
         try {
+          await this.applyActiveProfile(repo.rootPath);
           const output = await repo.commit(msg.message, msg.amend);
           this.post({ type: 'COMMIT_OP_RESULT', requestId: msg.requestId, ok: true, output });
         } catch (e: unknown) {
@@ -209,6 +222,7 @@ export class CommitPanelProvider implements vscode.WebviewViewProvider {
           { location: vscode.ProgressLocation.Notification, title: 'GitStorm: Commit & Push', cancellable: false },
           async () => {
             try {
+              await this.applyActiveProfile(repo.rootPath);
               await repo.commit(msg.message, msg.amend);
               await repo.push();
               this.post({ type: 'COMMIT_OP_RESULT', requestId: msg.requestId, ok: true });
@@ -251,6 +265,7 @@ export class CommitPanelProvider implements vscode.WebviewViewProvider {
                 // Stage/unstage according to user selection before committing
                 if (r.filesToUnstage.length > 0) await repo.unstageFiles(r.filesToUnstage);
                 if (r.filesToStage.length > 0) await repo.stageFiles(r.filesToStage);
+                await this.applyActiveProfile(repo.rootPath);
                 await repo.commit(r.message, r.amend);
                 if (msg.andPush) await repo.push();
               } catch (e: unknown) {
